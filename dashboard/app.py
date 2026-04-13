@@ -40,22 +40,107 @@ st.set_page_config(
 # ── Custom CSS ───────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
+    /* ── Page & layout ── */
     .main { background-color: #F8F9FA; }
     .block-container { padding-top: 1.5rem; padding-bottom: 1rem; }
-    h1 { color: #003366; font-family: Arial, sans-serif; }
-    h2, h3 { color: #003366; }
-    .stMetric label { font-size: 0.82rem; color: #555; }
-    .stMetric [data-testid="metric-container"] { background: white; border-radius: 8px; padding: 12px; }
-    .sprint-badge {
-        background: #003366; color: white; padding: 3px 10px;
-        border-radius: 12px; font-size: 0.78rem; font-weight: 600;
-        display: inline-block; margin-bottom: 0.5rem;
+
+    /* ── Headings ── */
+    h1 { color: #003366 !important; font-family: Arial, sans-serif; font-size: 2rem; }
+    h2, h3, h4 { color: #003366 !important; font-family: Arial, sans-serif; }
+
+    /* ── Body text: force dark on light background ── */
+    p, li, span, div { color: #1A1A2E; }
+
+    /* ── Sidebar ── */
+    [data-testid="stSidebar"] {
+        background-color: #FFFFFF;
+        border-right: 1px solid #DDE3EA;
     }
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] div,
+    [data-testid="stSidebar"] label { color: #1A1A2E !important; }
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3 { color: #003366 !important; }
+    [data-testid="stSidebar"] .stMarkdown { color: #333333 !important; }
+
+    /* ── Metric cards ── */
+    [data-testid="metric-container"] {
+        background: #FFFFFF;
+        border: 1px solid #DDE3EA;
+        border-radius: 8px;
+        padding: 14px 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    [data-testid="metric-container"] label {
+        font-size: 0.78rem !important;
+        color: #555E6E !important;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+    [data-testid="metric-container"] [data-testid="stMetricValue"] {
+        color: #003366 !important;
+        font-size: 1.6rem !important;
+        font-weight: 700;
+    }
+
+    /* ── Tab labels ── */
+    [data-testid="stTabs"] button {
+        color: #444D5C !important;
+        font-weight: 600;
+        font-size: 0.88rem;
+    }
+    [data-testid="stTabs"] button[aria-selected="true"] {
+        color: #003366 !important;
+        border-bottom-color: #003366 !important;
+    }
+
+    /* ── Selectbox / slider labels ── */
+    [data-testid="stSelectbox"] label,
+    [data-testid="stSlider"] label,
+    [data-testid="stMultiSelect"] label,
+    [data-testid="stRadio"] label { color: #1A1A2E !important; font-weight: 600; font-size: 0.85rem; }
+
+    /* ── Radio options ── */
+    [data-testid="stRadio"] div[role="radiogroup"] label { color: #333333 !important; font-weight: 400; }
+
+    /* ── Expander ── */
+    [data-testid="stExpander"] summary { color: #003366 !important; font-weight: 600; }
+
+    /* ── Info / warning banners ── */
+    [data-testid="stAlert"] { color: #1A1A2E !important; }
+
+    /* ── Context box (custom HTML) ── */
     .context-box {
-        background: #EBF4FF; border-left: 4px solid #003366;
-        padding: 10px 16px; border-radius: 0 6px 6px 0;
-        font-size: 0.88rem; margin-bottom: 1rem;
+        background: #EBF4FF;
+        border-left: 4px solid #003366;
+        padding: 12px 18px;
+        border-radius: 0 6px 6px 0;
+        font-size: 0.88rem;
+        color: #1A2A3A !important;
+        margin-bottom: 1rem;
     }
+    .context-box b { color: #003366; }
+
+    /* ── Sprint badge (sidebar) ── */
+    .sprint-badge {
+        background: #003366;
+        color: #FFFFFF !important;
+        padding: 3px 10px;
+        border-radius: 12px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        display: inline-block;
+        margin-bottom: 0.4rem;
+    }
+    .sprint-meta { font-size: 0.78rem; color: #555E6E !important; line-height: 1.5; }
+
+    /* ── Dataframe ── */
+    [data-testid="stDataFrame"] { border: 1px solid #DDE3EA; border-radius: 6px; }
+
+    /* ── Horizontal rule ── */
+    hr { border-color: #DDE3EA; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -116,7 +201,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown(
         '<div class="sprint-badge">Sprint C Preview</div>'
-        '<div style="font-size:0.78rem;color:#555;">June 2026 Learning Session<br>Full build: LTE-led, Fall 2026</div>',
+        '<div class="sprint-meta">June 2026 Learning Session<br>Full build: LTE-led, Fall 2026</div>',
         unsafe_allow_html=True,
     )
 
@@ -354,7 +439,7 @@ with tab5:
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
-    "<div style='font-size:0.78rem;color:#888;text-align:center;'>"
+    "<div style='font-size:0.78rem;color:#555E6E;text-align:center;'>"
     "Malnutrition Data Commons | Sprint C Preview | June 2026 Learning Session | "
     "Data: WHO GHO, World Bank/JME | IDM, Bill & Melinda Gates Foundation"
     "</div>",
