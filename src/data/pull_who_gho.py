@@ -21,6 +21,8 @@ INDICATORS = {
     "stunting_prev":            "NUTSTUNTINGPREV",
     "wasting_prev":             "NUTRITION_WH_2",
     "tb_incidence":             "MDG_0000000020",
+    "hiv_prevalence":           "MDG_0000000029",   # HIV prevalence adults 15–49 (%)
+    "malaria_incidence":        "MALARIA_EST_INCIDENCE",  # Estimated malaria incidence (per 1000 at risk)
 }
 
 

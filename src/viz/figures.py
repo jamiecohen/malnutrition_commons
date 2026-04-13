@@ -40,6 +40,8 @@ INDICATOR_CONFIG = {
     "stunting_pct_who":           ("Stunting prevalence <5 (%)",               "YlOrBr",  "%"),
     "wasting_pct":                ("Wasting prevalence <5 (%)",                "OrRd",    "%"),
     "tb_incidence_per100k":       ("TB incidence (per 100k pop.)",             "Blues",   "per 100k"),
+    "hiv_prevalence_pct":         ("HIV prevalence, adults 15–49 (%)",         "Purples", "%"),
+    "malaria_incidence_per1000":  ("Malaria incidence (per 1000 at risk)",     "Greens",  "per 1000"),
     "underweight_pct":            ("Underweight prevalence <5 (%)",            "PuRd",    "%"),
 }
 

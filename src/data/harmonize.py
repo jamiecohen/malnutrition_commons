@@ -95,6 +95,12 @@ def load_all_sources() -> dict[str, pd.DataFrame]:
     # TB incidence per 100k — no sex dimension in MDG_0000000020
     sources["tb"] = load_gho_any_sex("tb_incidence.csv", "tb_incidence_per100k")
 
+    # HIV prevalence adults 15–49 (%) — no sex dimension
+    sources["hiv"] = load_gho_any_sex("hiv_prevalence.csv", "hiv_prevalence_pct")
+
+    # Malaria estimated incidence per 1000 population at risk
+    sources["malaria"] = load_gho_any_sex("malaria_incidence.csv", "malaria_incidence_per1000")
+
     # UNICEF/WB child malnutrition
     uni = pd.read_csv(RAW / "unicef" / "child_malnutrition_wb.csv")
     uni = uni[~uni["iso3"].isin(AGGREGATE_ISO3)]
