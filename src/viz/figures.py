@@ -34,15 +34,24 @@ REGION_COLORS = {
 
 # Indicator display config: {col: (label, colorscale, unit)}
 INDICATOR_CONFIG = {
+    # ── Anaemia ────────────────────────────────────────────────────────────────
     "anaemia_children_pct":       ("Anaemia in children <5 (%)",              "Reds",    "%"),
     "anaemia_pregnant_women_pct": ("Anaemia in pregnant women (%)",            "Oranges", "%"),
     "anaemia_women_repro_pct":    ("Anaemia in women 15–49 (%)",               "YlOrRd",  "%"),
+    # ── Child malnutrition ────────────────────────────────────────────────────
     "stunting_pct_who":           ("Stunting prevalence <5 (%)",               "YlOrBr",  "%"),
     "wasting_pct":                ("Wasting prevalence <5 (%)",                "OrRd",    "%"),
+    "underweight_pct":            ("Underweight prevalence <5 (%)",            "PuRd",    "%"),
+    # ── Infectious disease ────────────────────────────────────────────────────
     "tb_incidence_per100k":       ("TB incidence (per 100k pop.)",             "Blues",   "per 100k"),
     "hiv_prevalence_pct":         ("HIV prevalence, adults 15–49 (%)",         "Purples", "%"),
     "malaria_incidence_per1000":  ("Malaria incidence (per 1000 at risk)",     "Greens",  "per 1000"),
-    "underweight_pct":            ("Underweight prevalence <5 (%)",            "PuRd",    "%"),
+    # ── Micronutrient deficiencies (OWID / GBD) ───────────────────────────────
+    "vitamin_a_deficiency_pct":   ("Vitamin A deficiency, children <5 (%)",   "YlOrRd",  "%"),
+    "zinc_deficiency_pct":        ("Zinc deficiency prevalence (%)",           "BuGn",    "%"),
+    "iron_deficiency_pct":        ("Iron deficiency prevalence (%)",           "Reds",    "%"),
+    "iodine_deficiency_pct":      ("Iodine deficiency prevalence (%)",         "Blues",   "%"),
+    # ── Food fortification ────────────────────────────────────────────────────
     "lsff_coverage_proxy_pct":    ("LSFF wheat flour coverage, proxy (%)",     "YlGn",    "%"),
 }
 

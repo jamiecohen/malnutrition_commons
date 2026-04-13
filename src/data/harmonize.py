@@ -121,6 +121,28 @@ def load_all_sources() -> dict[str, pd.DataFrame]:
     else:
         print("  [skip] LSFF data not found — run pull_lsff.py first")
 
+    # GBD micronutrient deficiencies (OWID + optional manual GBD export)
+    GBD_RAW = RAW / "gbd"
+    gbd_indicators = {
+        "vitamin_a_deficiency.csv": "vitamin_a_deficiency_pct",
+        "zinc_deficiency.csv":      "zinc_deficiency_pct",
+        "iron_deficiency.csv":      "iron_deficiency_pct",
+        "iodine_deficiency.csv":    "iodine_deficiency_pct",
+    }
+    for fname, col in gbd_indicators.items():
+        fpath = GBD_RAW / fname
+        if fpath.exists():
+            gbd = pd.read_csv(fpath)
+            gbd = gbd[~gbd["iso3"].isin(AGGREGATE_ISO3)]
+            gbd["year"] = pd.to_numeric(gbd["year"], errors="coerce").astype("Int64")
+            gbd = gbd.dropna(subset=["iso3", "year", col])
+            gbd["year"] = gbd["year"].astype(int)
+            key = col.replace("_pct", "")
+            sources[key] = gbd[["iso3", "year", col]]
+            print(f"  Loaded {col}: {len(gbd):,} rows")
+        else:
+            print(f"  [skip] {fname} not found — run pull_gbd.py first")
+
     return sources
 
 
@@ -189,12 +211,21 @@ def get_country_names() -> pd.DataFrame:
 
 def most_recent(panel: pd.DataFrame, window: tuple = (2010, 2023)) -> pd.DataFrame:
     """For each country, take the most recent value within the recency window per indicator.
-    LSFF columns (no time dimension) are carried through without a _year suffix."""
+
+    If a country has NO value for a given indicator within the window, fall back to
+    the best available year from the full panel (handles OWID reference estimates that
+    pre-date the window, e.g. Vitamin A 2005, Zinc 1990–2005).
+
+    LSFF columns (no time dimension) are carried through without a _year suffix.
+    """
     lsff_cols = [c for c in panel.columns if c.startswith("lsff_") or
                  c in ("wheat_flour_legislation", "maize_flour_legislation")]
 
     filtered = panel[(panel["year"] >= window[0]) & (panel["year"] <= window[1])].copy()
     filtered = filtered.sort_values("year", ascending=False)
+
+    # Full panel sorted newest-first (for fallback)
+    full_sorted = panel.sort_values("year", ascending=False)
 
     # Time-varying indicators only
     indicator_cols = [c for c in filtered.columns
@@ -202,10 +233,28 @@ def most_recent(panel: pd.DataFrame, window: tuple = (2010, 2023)) -> pd.DataFra
     result = filtered[["iso3", "year"]].drop_duplicates("iso3", keep="first").copy()
 
     for col in indicator_cols:
+        # Primary: most recent within window
         col_data = filtered[["iso3", "year", col]].dropna(subset=[col])
         col_data = col_data.drop_duplicates("iso3", keep="first")[["iso3", col, "year"]].rename(
             columns={"year": f"{col}_year"}
         )
+
+        # Fallback: best available year from full panel (for countries with no in-window value)
+        fallback = full_sorted[["iso3", "year", col]].dropna(subset=[col])
+        fallback = fallback.drop_duplicates("iso3", keep="first")[["iso3", col, "year"]].rename(
+            columns={"year": f"{col}_year"}
+        )
+        # Merge fallback only for rows missing in primary
+        all_countries = result[["iso3"]].copy()
+        merged_primary  = all_countries.merge(col_data,  on="iso3", how="left")
+        merged_fallback = all_countries.merge(fallback,  on="iso3", how="left")
+        # Fill NaN values from fallback
+        merged_primary[col] = merged_primary[col].fillna(merged_fallback[col])
+        merged_primary[f"{col}_year"] = merged_primary[f"{col}_year"].fillna(
+            merged_fallback[f"{col}_year"]
+        )
+        col_data = merged_primary
+
         result = result.merge(col_data, on="iso3", how="left")
 
     # Re-attach LSFF columns (non-time-varying) directly
