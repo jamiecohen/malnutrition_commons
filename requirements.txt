@@ -20,3 +20,6 @@ streamlit-folium>=0.18
 # Utilities
 tqdm>=4.66
 python-dotenv>=1.0
+
+# Static image export
+kaleido>=0.2

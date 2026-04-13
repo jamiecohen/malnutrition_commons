@@ -1,5 +1,8 @@
 # Data files (large raw downloads)
 data/raw/
+
+# Generated outputs (large PNGs — commit HTMLs only)
+outputs/slides/*.png
 *.csv.gz
 *.parquet
 

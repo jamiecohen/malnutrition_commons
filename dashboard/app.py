@@ -23,6 +23,11 @@ from src.viz.figures import (
     trend_lines,
     FOUNDATION_BLUE,
 )
+from src.viz.triple_burden import (
+    composite_burden_map,
+    cooccurrence_scatter as tb_scatter,
+    burden_profile_bars,
+)
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -162,11 +167,12 @@ st.markdown("---")
 
 
 # ── Tab layout ────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🗺️ Geographic Map",
     "🔗 Co-Occurrence",
     "📊 Country Rankings",
     "📈 Trends",
+    "🎯 Burden Profile",
 ])
 
 
@@ -296,6 +302,53 @@ with tab4:
             st.plotly_chart(fig4, use_container_width=True)
         else:
             st.info("Select at least one country to view trends.")
+
+
+# ── Tab 5: Burden Profile (Learning Session slide visuals) ───────────────────
+with tab5:
+    st.markdown(
+        "**Three views of the integrated burden landscape** — designed for the June Learning Session. "
+        "These illustrate the cross-portfolio analytical value of the malnutrition commons: "
+        "nutritional deficiencies, TB, HIV, and malaria co-occur in the same geographies."
+    )
+
+    sub1, sub2, sub3 = st.tabs([
+        "Composite Burden Map", "Co-Occurrence Scatter", "Country Burden Profile"
+    ])
+
+    with sub1:
+        st.markdown(
+            "Equal-weighted composite of anaemia, TB, HIV, and malaria — normalized 0–1 within each indicator. "
+            "Sub-Saharan Africa dominates, with pockets of high burden in South/Southeast Asia."
+        )
+        fig_map = composite_burden_map(filtered_snap, height=500)
+        st.plotly_chart(fig_map, use_container_width=True)
+
+    with sub2:
+        n_label = st.slider("Annotate top-N countries", 5, 20, 12, key="tb_n")
+        st.markdown(
+            "Each bubble is a country. **X = anaemia prevalence**, **Y = TB incidence**, "
+            "**size = malaria incidence**, **color = HIV prevalence**. "
+            "Countries in the upper-right face the highest combined nutritional + infectious disease burden."
+        )
+        fig_scatter = tb_scatter(filtered_snap, height=560)
+        st.plotly_chart(fig_scatter, use_container_width=True)
+
+    with sub3:
+        n_countries = st.slider("Number of countries", 10, 25, 15, key="bp_n")
+        st.markdown(
+            "Top countries ranked by composite score. Bars show normalized burden per indicator. "
+            "★ marks Foundation priority countries."
+        )
+        fig_bars = burden_profile_bars(filtered_snap, n=n_countries, height=max(500, n_countries * 36))
+        st.plotly_chart(fig_bars, use_container_width=True)
+
+    st.markdown("---")
+    st.markdown(
+        "**Export static versions** of these figures for slides: "
+        "`venv/bin/python src/viz/triple_burden.py`  "
+        "→ saves PNG + HTML to `outputs/slides/`"
+    )
 
 
 # ── Footer ────────────────────────────────────────────────────────────────────

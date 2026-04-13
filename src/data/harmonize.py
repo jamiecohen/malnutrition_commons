@@ -212,11 +212,9 @@ def run():
     # Save most-recent-year snapshot
     print("Building most-recent-year snapshot...")
     snapshot = most_recent(panel)
-    # Clean metadata: use single authoritative columns from meta/names
-    # Drop any duplicated metadata columns from the panel merge before re-attaching
-    meta_cols = ["who_region", "who_region_code"]
-    name_cols = ["country_name", "continent", "pop_est"]
-    drop_cols = [c for c in snapshot.columns if any(c.startswith(m) for m in meta_cols + name_cols)]
+    # Drop all metadata cols before cleanly re-attaching — avoids _x/_y duplication
+    meta_prefixes = ["who_region", "who_region_code", "country_name", "region", "income_level"]
+    drop_cols = [c for c in snapshot.columns if any(c.startswith(p) for p in meta_prefixes)]
     snapshot = snapshot.drop(columns=drop_cols, errors="ignore")
     snapshot = snapshot.merge(meta, on="iso3", how="left")
     snapshot = snapshot.merge(names[["iso3", "country_name", "region", "income_level"]], on="iso3", how="left")
