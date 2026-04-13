@@ -853,6 +853,459 @@ def burden_heatmap(df, show=False, n_countries=40):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# H7  Vitamin A deficiency amplifies measles burden (controlling for MCV1)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def h7_vitamin_a_measles(df, show=False):
+    """
+    H7: Countries with higher vitamin A deficiency carry a higher measles
+    burden even after accounting for MCV1 vaccination coverage.
+    Mechanism: vitamin A is essential for mucosal immunity and is used as
+    adjunct treatment for measles; deficiency worsens outcomes.
+    WHO/Cochrane evidence: vitamin A supplementation reduces measles
+    mortality by >50%.
+
+    Approach: partial correlation — residualise both VitA and log(measles)
+    on MCV1 coverage, then correlate the residuals.
+    """
+    sub = df[
+        df["vitamin_a_deficiency_pct"].notna() &
+        df["measles_per100k"].notna() &
+        df["mcv1_coverage_pct"].notna() &
+        (df["measles_per100k"] > 0)
+    ].copy()
+    sub["log_measles"] = np.log10(sub["measles_per100k"])
+
+    # Direct correlation
+    r_direct, p_direct = stats.spearmanr(
+        sub["vitamin_a_deficiency_pct"], sub["log_measles"]
+    )
+
+    # Partial correlation: residualise on MCV1
+    def _resid(y_col, x_col, data):
+        valid = data[[y_col, x_col]].dropna()
+        m, b, *_ = stats.linregress(valid[x_col], valid[y_col])
+        return data[y_col] - (m * data[x_col] + b)
+
+    sub["vita_resid"]    = _resid("vitamin_a_deficiency_pct", "mcv1_coverage_pct", sub)
+    sub["measles_resid"] = _resid("log_measles", "mcv1_coverage_pct", sub)
+    r_partial, p_partial = stats.spearmanr(
+        sub["vita_resid"], sub["measles_resid"], nan_policy="omit"
+    )
+
+    fig = make_subplots(rows=1, cols=2,
+                        subplot_titles=[
+                            f"Vitamin A deficiency vs. measles/100k<br>"
+                            f"<sup>Direct Spearman {_corr_label(r_direct, p_direct, len(sub))}</sup>",
+                            f"Vitamin A vs. measles (both residualised on MCV1)<br>"
+                            f"<sup>Partial Spearman {_corr_label(r_partial, p_partial, len(sub))}</sup>",
+                        ],
+                        horizontal_spacing=0.12)
+
+    for region, color in REGION_COLORS.items():
+        mask = sub["region"] == region
+        if mask.sum() == 0:
+            continue
+        for col_n, xcol, ycol in [
+            (1, "vitamin_a_deficiency_pct", "log_measles"),
+            (2, "vita_resid",               "measles_resid"),
+        ]:
+            fig.add_trace(go.Scatter(
+                x=sub.loc[mask, xcol], y=sub.loc[mask, ycol],
+                mode="markers", name=region or "Other",
+                marker=dict(color=color, size=7, opacity=0.75),
+                customdata=sub.loc[mask, ["country_name", "vitamin_a_deficiency_pct",
+                                           "measles_per100k", "mcv1_coverage_pct"]].values,
+                hovertemplate="<b>%{customdata[0]}</b><br>"
+                              "VitA def: %{customdata[1]:.1f}%<br>"
+                              "Measles/100k: %{customdata[2]:.1f}<br>"
+                              "MCV1: %{customdata[3]:.0f}%<extra></extra>",
+                showlegend=(col_n == 1), legendgroup=region,
+            ), row=1, col=col_n)
+
+    _annotate_priority(fig, sub, "vitamin_a_deficiency_pct", "log_measles", row=1, col=1)
+    _annotate_priority(fig, sub, "vita_resid", "measles_resid", row=1, col=2)
+
+    yticks = [0.01, 0.1, 1, 10, 100, 1000]
+    fig.update_yaxes(
+        tickvals=[np.log10(v) for v in yticks],
+        ticktext=[str(v) for v in yticks],
+        title_text="Measles cases per 100k (log scale)", row=1, col=1,
+    )
+    fig.update_yaxes(title_text="Measles residual (after MCV1)", row=1, col=2)
+    fig.update_xaxes(title_text="Vitamin A deficiency (%)", row=1, col=1)
+    fig.update_xaxes(title_text="Vitamin A deficiency residual (after MCV1)", row=1, col=2)
+    fig.update_layout(
+        title=dict(text="H7 — Vitamin A deficiency amplifies measles burden beyond vaccination gaps",
+                   font=dict(size=18, **FONT), x=0.05),
+        plot_bgcolor="#FAFAFA", paper_bgcolor="white", font=FONT, height=550,
+    )
+
+    print(f"\nH7 Findings:")
+    print(f"  VitA vs log(measles/100k) direct:  r={r_direct:.3f}, p={p_direct:.3e}, n={len(sub)}")
+    print(f"  VitA vs measles partial (|MCV1): r={r_partial:.3f}, p={p_partial:.3e}")
+
+    _save(fig, "h7_vitamin_a_measles", show)
+    return fig
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# H8  Maternal anaemia → maternal mortality
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def h8_maternal_anaemia_mortality(df, show=False):
+    """
+    H8: Maternal anaemia — particularly in pregnant women — is a major
+    pathway to maternal mortality through postpartum haemorrhage and
+    reduced surgical resilience. The one-pager cites Daru et al. (2018):
+    anaemic women face significantly elevated maternal mortality risk.
+
+    We test: anaemia_pregnant_women_pct → log(maternal_mortality_per100k)
+    and compare SSA vs. South Asia as regional archetypes.
+    """
+    sub = df[
+        df["anaemia_pregnant_women_pct"].notna() &
+        df["maternal_mortality_per100k"].notna() &
+        (df["maternal_mortality_per100k"] > 0)
+    ].copy()
+    sub["log_mmr"] = np.log10(sub["maternal_mortality_per100k"])
+
+    r, p = stats.spearmanr(sub["anaemia_pregnant_women_pct"], sub["log_mmr"])
+
+    # Also ANC4 → MMR (the care-access pathway)
+    sub2 = df[
+        df["anc4_coverage_pct"].notna() &
+        df["maternal_mortality_per100k"].notna() &
+        (df["maternal_mortality_per100k"] > 0)
+    ].copy()
+    sub2["log_mmr"] = np.log10(sub2["maternal_mortality_per100k"])
+    r2, p2 = stats.spearmanr(sub2["anc4_coverage_pct"], sub2["log_mmr"])
+
+    fig = make_subplots(rows=1, cols=2,
+                        subplot_titles=[
+                            f"Maternal anaemia → maternal mortality<br>"
+                            f"<sup>Spearman {_corr_label(r, p, len(sub))}</sup>",
+                            f"ANC4 coverage → maternal mortality<br>"
+                            f"<sup>Spearman {_corr_label(r2, p2, len(sub2))}</sup>",
+                        ],
+                        horizontal_spacing=0.12)
+
+    for region, color in REGION_COLORS.items():
+        for col_n, ss, xcol in [(1, sub, "anaemia_pregnant_women_pct"),
+                                 (2, sub2, "anc4_coverage_pct")]:
+            mask = ss["region"] == region
+            if mask.sum() == 0:
+                continue
+            fig.add_trace(go.Scatter(
+                x=ss.loc[mask, xcol], y=ss.loc[mask, "log_mmr"],
+                mode="markers", name=region or "Other",
+                marker=dict(color=color, size=7, opacity=0.75),
+                customdata=ss.loc[mask, ["country_name", xcol,
+                                          "maternal_mortality_per100k"]].values,
+                hovertemplate="<b>%{customdata[0]}</b><br>"
+                              f"{xcol}: %{{customdata[1]:.1f}}<br>"
+                              "MMR: %{customdata[2]:.0f}/100k<extra></extra>",
+                showlegend=(col_n == 1), legendgroup=region,
+            ), row=1, col=col_n)
+
+    _annotate_priority(fig, sub,  "anaemia_pregnant_women_pct", "log_mmr", row=1, col=1)
+    _annotate_priority(fig, sub2, "anc4_coverage_pct",          "log_mmr", row=1, col=2)
+
+    mmr_ticks = [10, 50, 100, 200, 500, 1000, 2000]
+    for col_n in [1, 2]:
+        fig.update_yaxes(
+            tickvals=[np.log10(v) for v in mmr_ticks],
+            ticktext=[str(v) for v in mmr_ticks],
+            title_text="Maternal mortality ratio (per 100k, log scale)",
+            row=1, col=col_n,
+        )
+    fig.update_xaxes(title_text="Anaemia prevalence, pregnant women (%)", row=1, col=1)
+    fig.update_xaxes(title_text="ANC 4+ visits coverage (%)", row=1, col=2)
+    fig.update_layout(
+        title=dict(text="H8 — Maternal anaemia and ANC gaps predict maternal mortality",
+                   font=dict(size=18, **FONT), x=0.05),
+        plot_bgcolor="#FAFAFA", paper_bgcolor="white", font=FONT, height=550,
+    )
+
+    print(f"\nH8 Findings:")
+    print(f"  Pregnant anaemia vs log(MMR): r={r:.3f}, p={p:.3e}, n={len(sub)}")
+    print(f"  ANC4 vs log(MMR):            r={r2:.3f}, p={p2:.3e}, n={len(sub2)}")
+    top_mmr = sub.nlargest(8, "maternal_mortality_per100k")[
+        ["country_name", "anaemia_pregnant_women_pct", "maternal_mortality_per100k", "region"]
+    ]
+    print(f"  Highest MMR countries:\n{top_mmr.to_string(index=False)}")
+
+    _save(fig, "h8_maternal_anaemia_mortality", show)
+    return fig
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# H9  Stunting + wasting → under-5 mortality (the 45% claim)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def h9_undernutrition_child_mortality(df, show=False):
+    """
+    H9: Undernutrition — stunting and wasting — is the largest single
+    risk factor for child mortality globally, estimated to contribute to
+    ~45% of under-5 deaths (Black et al. 2013 Lancet). We test whether
+    this signal is visible at country level cross-sectionally.
+
+    Also test the composite: stunting + wasting + anaemia + LBW vs U5MR,
+    using the nutrition_burden_score.
+    """
+    sub = df[
+        df["stunting_pct_who"].notna() &
+        df["u5_mortality_per1000"].notna()
+    ].copy()
+    sub["log_u5mr"] = np.log10(sub["u5_mortality_per1000"].clip(lower=0.5))
+
+    sub2 = df[df["nutrition_burden_score"].notna() & df["u5_mortality_per1000"].notna()].copy()
+    sub2["log_u5mr"] = np.log10(sub2["u5_mortality_per1000"].clip(lower=0.5))
+
+    r_st,  p_st  = stats.spearmanr(sub["stunting_pct_who"],       sub["log_u5mr"])
+    r_nb,  p_nb  = stats.spearmanr(sub2["nutrition_burden_score"], sub2["log_u5mr"])
+
+    fig = make_subplots(rows=1, cols=2,
+                        subplot_titles=[
+                            f"Stunting prevalence vs. under-5 mortality<br>"
+                            f"<sup>Spearman {_corr_label(r_st, p_st, len(sub))}</sup>",
+                            f"Composite nutrition burden vs. under-5 mortality<br>"
+                            f"<sup>Spearman {_corr_label(r_nb, p_nb, len(sub2))}</sup>",
+                        ],
+                        horizontal_spacing=0.12)
+
+    for region, color in REGION_COLORS.items():
+        for col_n, ss, xcol in [(1, sub, "stunting_pct_who"),
+                                 (2, sub2, "nutrition_burden_score")]:
+            mask = ss["region"] == region
+            if mask.sum() == 0:
+                continue
+            fig.add_trace(go.Scatter(
+                x=ss.loc[mask, xcol], y=ss.loc[mask, "log_u5mr"],
+                mode="markers", name=region or "Other",
+                marker=dict(color=color, size=7, opacity=0.75),
+                customdata=ss.loc[mask, ["country_name", xcol,
+                                          "u5_mortality_per1000"]].values,
+                hovertemplate="<b>%{customdata[0]}</b><br>"
+                              f"{xcol}: %{{customdata[1]:.2f}}<br>"
+                              "U5MR: %{customdata[2]:.1f}/1k<extra></extra>",
+                showlegend=(col_n == 1), legendgroup=region,
+            ), row=1, col=col_n)
+
+    _annotate_priority(fig, sub,  "stunting_pct_who",       "log_u5mr", row=1, col=1)
+    _annotate_priority(fig, sub2, "nutrition_burden_score",  "log_u5mr", row=1, col=2)
+
+    u5_ticks = [2, 5, 10, 20, 50, 100, 200]
+    for col_n in [1, 2]:
+        fig.update_yaxes(
+            tickvals=[np.log10(v) for v in u5_ticks],
+            ticktext=[str(v) for v in u5_ticks],
+            title_text="Under-5 mortality rate (per 1,000, log scale)",
+            row=1, col=col_n,
+        )
+    fig.update_xaxes(title_text="Stunting prevalence, WHO model (%)", row=1, col=1)
+    fig.update_xaxes(title_text="Composite nutrition burden score (0–1)", row=1, col=2)
+    fig.update_layout(
+        title=dict(
+            text="H9 — Undernutrition predicts under-5 mortality: the 45% pathway, visible in data<br>"
+                 "<sup>Stunting alone and composite burden (stunting + anaemia + iron def. + LBW) "
+                 "vs. U5MR across 150+ countries</sup>",
+            font=dict(size=16, **FONT), x=0.05,
+        ),
+        plot_bgcolor="#FAFAFA", paper_bgcolor="white", font=FONT, height=560,
+    )
+
+    print(f"\nH9 Findings:")
+    print(f"  Stunting vs log(U5MR):          r={r_st:.3f}, p={p_st:.3e}, n={len(sub)}")
+    print(f"  Composite burden vs log(U5MR):  r={r_nb:.3f}, p={p_nb:.3e}, n={len(sub2)}")
+
+    _save(fig, "h9_undernutrition_child_mortality", show)
+    return fig
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# H10  Nutrition burden → human capital
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def h10_nutrition_human_capital(df, show=False):
+    """
+    H10: The one-pager's central human capital claim — undernutrition
+    impairs brain development, schooling, and productivity. Iodine
+    deficiency alone is associated with substantial IQ losses; stunting
+    in early life correlates with ~0.5–1 year less schooling and ~20%
+    lower adult earnings.
+
+    We test: nutrition_burden_score → HCI and GDP per capita (log scale).
+    This is the full downstream pathway: nutrition → human capital → economy.
+    """
+    sub_hci = df[df["nutrition_burden_score"].notna() & df["hci_score"].notna()].copy()
+    sub_gdp = df[
+        df["nutrition_burden_score"].notna() &
+        df["gdp_per_capita_ppp"].notna() &
+        (df["gdp_per_capita_ppp"] > 0)
+    ].copy()
+    sub_gdp["log_gdp"] = np.log10(sub_gdp["gdp_per_capita_ppp"])
+
+    r_hci, p_hci = stats.spearmanr(sub_hci["nutrition_burden_score"], sub_hci["hci_score"])
+    r_gdp, p_gdp = stats.spearmanr(sub_gdp["nutrition_burden_score"], sub_gdp["log_gdp"])
+
+    fig = make_subplots(rows=1, cols=2,
+                        subplot_titles=[
+                            f"Nutrition burden → Human Capital Index<br>"
+                            f"<sup>Spearman {_corr_label(r_hci, p_hci, len(sub_hci))}</sup>",
+                            f"Nutrition burden → GDP per capita (PPP)<br>"
+                            f"<sup>Spearman {_corr_label(r_gdp, p_gdp, len(sub_gdp))}</sup>",
+                        ],
+                        horizontal_spacing=0.12)
+
+    for region, color in REGION_COLORS.items():
+        mask_hci = sub_hci["region"] == region
+        mask_gdp = sub_gdp["region"] == region
+        for col_n, ss, mask, ycol in [
+            (1, sub_hci, mask_hci, "hci_score"),
+            (2, sub_gdp, mask_gdp, "log_gdp"),
+        ]:
+            if mask.sum() == 0:
+                continue
+            fig.add_trace(go.Scatter(
+                x=ss.loc[mask, "nutrition_burden_score"],
+                y=ss.loc[mask, ycol],
+                mode="markers", name=region or "Other",
+                marker=dict(color=color, size=7, opacity=0.75),
+                customdata=ss.loc[mask, ["country_name", "nutrition_burden_score",
+                                          "hci_score" if col_n == 1 else "gdp_per_capita_ppp",
+                                          "stunting_pct_who"]].values,
+                hovertemplate="<b>%{customdata[0]}</b><br>"
+                              "Burden: %{customdata[1]:.2f}<br>"
+                              f"{'HCI' if col_n==1 else 'GDP/cap'}: %{{customdata[2]:.{'2f' if col_n==1 else '0f'}}}<br>"
+                              "Stunting: %{customdata[3]:.0f}%<extra></extra>",
+                showlegend=(col_n == 1), legendgroup=region,
+            ), row=1, col=col_n)
+
+    _annotate_priority(fig, sub_hci, "nutrition_burden_score", "hci_score",  row=1, col=1)
+    _annotate_priority(fig, sub_gdp, "nutrition_burden_score", "log_gdp",    row=1, col=2)
+
+    gdp_ticks = [500, 1000, 2000, 5000, 10000, 25000, 60000]
+    fig.update_yaxes(title_text="Human Capital Index (0 = no human capital, 1 = full)", row=1, col=1)
+    fig.update_yaxes(
+        tickvals=[np.log10(v) for v in gdp_ticks],
+        ticktext=[f"${v:,}" for v in gdp_ticks],
+        title_text="GDP per capita PPP (log scale)",
+        row=1, col=2,
+    )
+    fig.update_xaxes(title_text="Composite nutrition burden score (0–1, higher = worse)")
+    fig.update_layout(
+        title=dict(
+            text="H10 — Nutrition burden is a powerful predictor of human capital and economic productivity",
+            font=dict(size=17, **FONT), x=0.05,
+        ),
+        plot_bgcolor="#FAFAFA", paper_bgcolor="white", font=FONT, height=560,
+    )
+
+    print(f"\nH10 Findings:")
+    print(f"  Burden vs HCI:      r={r_hci:.3f}, p={p_hci:.3e}, n={len(sub_hci)}")
+    print(f"  Burden vs log(GDP): r={r_gdp:.3f}, p={p_gdp:.3e}, n={len(sub_gdp)}")
+    bottom_hci = sub_hci.nsmallest(8, "hci_score")[
+        ["country_name", "hci_score", "nutrition_burden_score", "stunting_pct_who"]
+    ]
+    print(f"  Lowest HCI countries:\n{bottom_hci.to_string(index=False)}")
+
+    _save(fig, "h10_nutrition_human_capital", show)
+    return fig
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# H11  Food insecurity → stunting → child mortality (the upstream pathway)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def h11_food_insecurity_pathway(df, show=False):
+    """
+    H11: The one-pager's upstream pathway — structural food systems
+    constraints (food insecurity) drive inadequate intake, which drives
+    stunting, which drives child mortality. This is the foundational
+    justification for food-systems and fortification investment.
+
+    We test the chain: food_insecurity → stunting → U5MR
+    using scatter plots and Spearman correlations at each link.
+    """
+    sub = df[
+        df["food_insecurity_mod_sev_pct"].notna() &
+        df["stunting_pct_who"].notna() &
+        df["u5_mortality_per1000"].notna()
+    ].copy()
+    sub["log_u5mr"] = np.log10(sub["u5_mortality_per1000"].clip(lower=0.5))
+
+    r_fs_st, p_fs_st = stats.spearmanr(sub["food_insecurity_mod_sev_pct"], sub["stunting_pct_who"])
+    r_st_u5, p_st_u5 = stats.spearmanr(sub["stunting_pct_who"], sub["log_u5mr"])
+    r_fs_u5, p_fs_u5 = stats.spearmanr(sub["food_insecurity_mod_sev_pct"], sub["log_u5mr"])
+
+    fig = make_subplots(rows=1, cols=3,
+                        subplot_titles=[
+                            f"Food insecurity → stunting<br>"
+                            f"<sup>Spearman {_corr_label(r_fs_st, p_fs_st, len(sub))}</sup>",
+                            f"Stunting → child mortality<br>"
+                            f"<sup>Spearman {_corr_label(r_st_u5, p_st_u5, len(sub))}</sup>",
+                            f"Food insecurity → child mortality (direct)<br>"
+                            f"<sup>Spearman {_corr_label(r_fs_u5, p_fs_u5, len(sub))}</sup>",
+                        ],
+                        horizontal_spacing=0.09)
+
+    u5_ticks = [2, 5, 10, 20, 50, 100, 200]
+
+    for region, color in REGION_COLORS.items():
+        mask = sub["region"] == region
+        if mask.sum() == 0:
+            continue
+        for col_n, xcol, ycol in [
+            (1, "food_insecurity_mod_sev_pct", "stunting_pct_who"),
+            (2, "stunting_pct_who",            "log_u5mr"),
+            (3, "food_insecurity_mod_sev_pct", "log_u5mr"),
+        ]:
+            fig.add_trace(go.Scatter(
+                x=sub.loc[mask, xcol], y=sub.loc[mask, ycol],
+                mode="markers", name=region or "Other",
+                marker=dict(color=color, size=6, opacity=0.7),
+                customdata=sub.loc[mask, ["country_name", xcol, ycol]].values,
+                hovertemplate="<b>%{customdata[0]}</b><br>"
+                              "%{customdata[1]:.1f} → %{customdata[2]:.1f}<extra></extra>",
+                showlegend=(col_n == 1), legendgroup=region,
+            ), row=1, col=col_n)
+
+    _annotate_priority(fig, sub, "food_insecurity_mod_sev_pct", "stunting_pct_who", row=1, col=1)
+    _annotate_priority(fig, sub, "stunting_pct_who", "log_u5mr", row=1, col=2)
+    _annotate_priority(fig, sub, "food_insecurity_mod_sev_pct", "log_u5mr", row=1, col=3)
+
+    fig.update_xaxes(title_text="Moderate/severe food insecurity (%)", row=1, col=1)
+    fig.update_xaxes(title_text="Moderate/severe food insecurity (%)", row=1, col=3)
+    fig.update_xaxes(title_text="Stunting prevalence (%)", row=1, col=2)
+    fig.update_yaxes(title_text="Stunting prevalence (%)", row=1, col=1)
+    for col_n in [2, 3]:
+        fig.update_yaxes(
+            tickvals=[np.log10(v) for v in u5_ticks],
+            ticktext=[str(v) for v in u5_ticks],
+            title_text="Under-5 mortality (per 1,000, log scale)",
+            row=1, col=col_n,
+        )
+
+    fig.update_layout(
+        title=dict(
+            text="H11 — The upstream pathway: food insecurity → stunting → child mortality",
+            font=dict(size=17, **FONT), x=0.05,
+        ),
+        plot_bgcolor="#FAFAFA", paper_bgcolor="white", font=FONT, height=540,
+        width=1400,
+    )
+
+    print(f"\nH11 Findings:")
+    print(f"  Food insecurity → stunting: r={r_fs_st:.3f}, p={p_fs_st:.3e}")
+    print(f"  Stunting → U5MR:            r={r_st_u5:.3f}, p={p_st_u5:.3e}")
+    print(f"  Food insecurity → U5MR:     r={r_fs_u5:.3f}, p={p_fs_u5:.3e}, n={len(sub)}")
+
+    _save(fig, "h11_food_insecurity_pathway", show)
+    return fig
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Main
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -872,6 +1325,11 @@ def run(show=False):
     h4_hiv_tb(df, show)
     h5_system_vs_burden(df, show)
     h6_lsff_gap(df, show)
+    h7_vitamin_a_measles(df, show)
+    h8_maternal_anaemia_mortality(df, show)
+    h9_undernutrition_child_mortality(df, show)
+    h10_nutrition_human_capital(df, show)
+    h11_food_insecurity_pathway(df, show)
     burden_heatmap(df, show)
 
     print(f"\n{'=' * 60}")

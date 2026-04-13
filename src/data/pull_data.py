@@ -14,6 +14,7 @@ from src.data.pull_unicef import pull_all as pull_unicef
 from src.data.pull_fao import pull_all as pull_fao
 from src.data.pull_lsff import pull_all as pull_lsff
 from src.data.pull_gbd import pull_all as pull_gbd
+from src.data.pull_outcomes import pull_all as pull_outcomes
 
 
 if __name__ == "__main__":
@@ -35,6 +36,9 @@ if __name__ == "__main__":
 
     print("\n[5/5] GBD Micronutrient Deficiencies (OWID + optional manual GBD export)")
     pull_gbd()
+
+    print("\n[6/6] Outcome & food-systems context indicators (World Bank)")
+    pull_outcomes()
 
     print("\n" + "=" * 60)
     print("All pulls complete. Run src/data/harmonize.py next.")

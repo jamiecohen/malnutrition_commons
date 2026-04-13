@@ -67,6 +67,17 @@ INDICATOR_CONFIG = {
     "ors_coverage_pct":           ("ORS treatment for child diarrhoea (%)",     "Purples", "%"),
     # ── Food fortification ────────────────────────────────────────────────────
     "lsff_coverage_proxy_pct":    ("LSFF wheat flour coverage, proxy (%)",     "YlGn",    "%"),
+    # ── Mortality & survival ─────────────────────────────────────────────────
+    "u5_mortality_per1000":       ("Under-5 mortality rate (per 1,000 live births)", "Reds",   "per 1k"),
+    "neonatal_mortality_per1000": ("Neonatal mortality rate (per 1,000 live births)","OrRd",   "per 1k"),
+    "maternal_mortality_per100k": ("Maternal mortality ratio (per 100,000 live births)", "RdPu","per 100k"),
+    # ── Human capital & economic development ─────────────────────────────────
+    "hci_score":                  ("World Bank Human Capital Index (0–1)",       "YlGn",   "index"),
+    "hci_learning_years":         ("HCI learning-adjusted years of school",      "Greens", "years"),
+    "gdp_per_capita_ppp":         ("GDP per capita, PPP (constant 2017 USD)",    "Blues",  "USD"),
+    # ── Food systems ─────────────────────────────────────────────────────────
+    "severe_food_insecurity_pct": ("Severe food insecurity prevalence (%)",      "Oranges","%"),
+    "food_insecurity_mod_sev_pct":("Moderate or severe food insecurity (%)",     "YlOrRd", "%"),
 }
 
 

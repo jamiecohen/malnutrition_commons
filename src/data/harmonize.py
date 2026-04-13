@@ -130,6 +130,32 @@ def load_all_sources() -> dict[str, pd.DataFrame]:
     else:
         print("  [skip] measles_reported_cases.csv not found")
 
+    # Outcome and food-systems context indicators (World Bank)
+    OUTCOMES_RAW = RAW / "outcomes"
+    outcomes_map = {
+        "u5_mortality_rate.csv":       "u5_mortality_per1000",
+        "neonatal_mortality_rate.csv": "neonatal_mortality_per1000",
+        "maternal_mortality_ratio.csv":"maternal_mortality_per100k",
+        "human_capital_index.csv":     "hci_score",
+        "hci_learning_years.csv":      "hci_learning_years",
+        "gdp_per_capita_ppp.csv":      "gdp_per_capita_ppp",
+        "severe_food_insecurity.csv":  "severe_food_insecurity_pct",
+        "food_insecurity_mod_sev.csv": "food_insecurity_mod_sev_pct",
+    }
+    for fname, col in outcomes_map.items():
+        fpath = OUTCOMES_RAW / fname
+        if fpath.exists():
+            out = pd.read_csv(fpath)
+            out = out[~out["iso3"].isin(AGGREGATE_ISO3)]
+            out["year"] = pd.to_numeric(out["year"], errors="coerce").astype("Int64")
+            out = out.dropna(subset=["iso3", "year", col])
+            out["year"] = out["year"].astype(int)
+            key = fname.replace(".csv", "")
+            sources[key] = out[["iso3", "year", col]]
+            print(f"  {key}: {len(out):,} rows")
+        else:
+            print(f"  [skip] {fname} not found — run pull_outcomes.py first")
+
     # UNICEF/WB child malnutrition
     uni = pd.read_csv(RAW / "unicef" / "child_malnutrition_wb.csv")
     uni = uni[~uni["iso3"].isin(AGGREGATE_ISO3)]
