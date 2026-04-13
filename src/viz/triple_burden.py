@@ -45,6 +45,13 @@ INDICATOR_LABELS = {
     "tb_incidence_per100k":      "TB incidence (per 100k)",
     "hiv_prevalence_pct":        "HIV prevalence, adults 15–49 (%)",
     "malaria_incidence_per1000": "Malaria incidence (per 1,000 at risk)",
+    "lsff_coverage_proxy_pct":   "LSFF wheat flour coverage, proxy (%)",
+}
+
+LSFF_STATUS_COLORS = {
+    "mandatory":   "#1A8754",   # green — program in place
+    "voluntary":   "#F0A500",   # amber — voluntary only
+    "no_program":  "#CC3333",   # red — no program
 }
 
 # Foundation priority countries for annotation
@@ -449,6 +456,225 @@ def burden_profile_bars(df: pd.DataFrame, n: int = 15, height: int = 560) -> go.
     return fig
 
 
+# ── Figure 4: LSFF coverage gap map ─────────────────────────────────────────
+
+def lsff_coverage_map(df: pd.DataFrame, height: int = 500) -> go.Figure:
+    """
+    Choropleth showing LSFF programme status (mandatory / voluntary / no programme)
+    with LSFF coverage proxy as the continuous colour scale.
+    Countries without LSFF data are shown in light grey.
+    """
+    plot_df = df.copy()
+    has_lsff = "lsff_coverage_proxy_pct" in plot_df.columns and \
+               plot_df["lsff_coverage_proxy_pct"].notna().any()
+
+    if not has_lsff:
+        fig = go.Figure()
+        fig.add_annotation(text="LSFF data not available — run pull_lsff.py",
+                           xref="paper", yref="paper", x=0.5, y=0.5,
+                           showarrow=False, font=dict(size=14, color="#888"))
+        return fig
+
+    # Hover text
+    def hover(row):
+        name = row.get("country_name", row["iso3"])
+        lines = [f"<b>{name}</b>"]
+        wheat = row.get("wheat_flour_legislation", "unknown")
+        maize = row.get("maize_flour_legislation", "unknown")
+        cov   = row.get("lsff_coverage_proxy_pct", None)
+        lines.append(f"  Wheat flour legislation: {wheat}")
+        lines.append(f"  Maize flour legislation: {maize}")
+        if pd.notna(cov):
+            lines.append(f"  Coverage proxy: {cov:.0f}%")
+        if pd.notna(row.get("anaemia_children_pct")):
+            lines.append(f"  Anaemia (children <5): {row['anaemia_children_pct']:.1f}%")
+        return "<br>".join(lines)
+
+    plot_df["hover_text"] = plot_df.apply(hover, axis=1)
+    covered = plot_df.dropna(subset=["lsff_coverage_proxy_pct"])
+
+    fig = go.Figure(go.Choropleth(
+        locations=covered["iso3"],
+        z=covered["lsff_coverage_proxy_pct"],
+        text=covered["hover_text"],
+        hoverinfo="text",
+        colorscale=[
+            [0.0,  "#FDECEA"],   # no programme — pale red
+            [0.01, "#FDECEA"],
+            [0.02, "#FFF3CD"],   # voluntary — amber range
+            [0.30, "#FFD966"],
+            [0.31, "#C8E6C9"],   # mandatory — green range
+            [1.0,  "#1B5E20"],
+        ],
+        zmin=0, zmax=100,
+        colorbar=dict(
+            title=dict(text="LSFF coverage<br>proxy (%)", font=dict(size=11, **SLIDE_FONT)),
+            thickness=14, len=0.6,
+            tickvals=[0, 20, 75],
+            ticktext=["No programme (0%)", "Voluntary (~20%)", "Mandatory (~75%)"],
+            tickfont=dict(size=9),
+        ),
+        marker_line_color="#CCCCCC",
+        marker_line_width=0.4,
+    ))
+
+    # Annotate Foundation priority countries
+    for iso3, name in PRIORITY_ISO3.items():
+        row = covered[covered["iso3"] == iso3]
+        if row.empty:
+            continue
+        status = row.iloc[0].get("wheat_flour_legislation", "unknown")
+        color = LSFF_STATUS_COLORS.get(status, "#888888")
+        fig.add_annotation(
+            text=f"<span style='color:{color}'>●</span> {name}",
+            showarrow=False,
+            font=dict(size=9, **SLIDE_FONT),
+        )
+
+    fig.update_layout(
+        title=dict(
+            text="<b>LSFF Programme Coverage</b><br>"
+                 "<span style='font-size:12px;color:#555'>"
+                 "Wheat flour fortification legislation status · proxy coverage estimate · "
+                 "<span style='color:#1A8754'>■ Mandatory</span>  "
+                 "<span style='color:#F0A500'>■ Voluntary</span>  "
+                 "<span style='color:#CC3333'>■ No programme</span>"
+                 "</span>",
+            font=dict(size=17, color=FOUNDATION_BLUE, **SLIDE_FONT),
+            x=0.02, y=0.97,
+        ),
+        paper_bgcolor=BG_SLIDE,
+        font=dict(**SLIDE_FONT),
+        height=height,
+        margin=dict(l=0, r=0, t=90, b=10),
+        geo=dict(
+            showframe=False, showcoastlines=True, coastlinecolor="#CCCCCC",
+            showland=True, landcolor="#F0F0F0",
+            showocean=True, oceancolor="#EAF3FB",
+            projection_type="natural earth", showlakes=False,
+        ),
+    )
+    return fig
+
+
+# ── Figure 5: Burden vs LSFF gap scatter ─────────────────────────────────────
+
+def lsff_gap_scatter(df: pd.DataFrame, height: int = 520) -> go.Figure:
+    """
+    Scatter: anaemia burden (x) vs. LSFF coverage proxy (y).
+    Quadrant of interest: HIGH anaemia + LOW LSFF = biggest intervention gap.
+    Bubble size = stunting prevalence. Annotate Foundation priority countries.
+    """
+    if "lsff_coverage_proxy_pct" not in df.columns:
+        fig = go.Figure()
+        fig.add_annotation(text="LSFF data not available",
+                           xref="paper", yref="paper", x=0.5, y=0.5,
+                           showarrow=False, font=dict(size=14, color="#888"))
+        return fig
+
+    plot_df = df.dropna(subset=["anaemia_children_pct", "lsff_coverage_proxy_pct"]).copy()
+    plot_df["_size"] = np.sqrt(plot_df.get("stunting_pct_who", pd.Series(10, index=plot_df.index)).fillna(10)) * 2.2
+
+    # Color by LSFF legislation status
+    status_col = "wheat_flour_legislation"
+    plot_df["_status"] = plot_df[status_col] if status_col in plot_df.columns else "unknown"
+    color_map = {**LSFF_STATUS_COLORS, "unknown": "#AAAAAA"}
+
+    fig = go.Figure()
+
+    for status, color in color_map.items():
+        sub = plot_df[plot_df["_status"] == status]
+        if sub.empty:
+            continue
+        label = {"mandatory": "Mandatory", "voluntary": "Voluntary",
+                 "no_program": "No programme", "unknown": "Unknown"}.get(status, status)
+
+        def make_hover(row):
+            name = row.get("country_name", row["iso3"])
+            lines = [f"<b>{name}</b>",
+                     f"Anaemia (children <5): {row['anaemia_children_pct']:.1f}%",
+                     f"LSFF coverage proxy: {row['lsff_coverage_proxy_pct']:.0f}%",
+                     f"Wheat flour: {row.get('wheat_flour_legislation','—')}"]
+            if pd.notna(row.get("stunting_pct_who")):
+                lines.append(f"Stunting: {row['stunting_pct_who']:.1f}%")
+            return "<br>".join(lines)
+
+        fig.add_trace(go.Scatter(
+            x=sub["anaemia_children_pct"],
+            y=sub["lsff_coverage_proxy_pct"],
+            mode="markers",
+            name=label,
+            marker=dict(size=sub["_size"], color=color, opacity=0.78,
+                        line=dict(color="rgba(255,255,255,0.5)", width=0.5),
+                        sizemode="diameter"),
+            text=sub.apply(make_hover, axis=1),
+            hoverinfo="text",
+        ))
+
+    # Annotate priority countries
+    for _, row in plot_df[plot_df["iso3"].isin(PRIORITY_ISO3)].iterrows():
+        fig.add_annotation(
+            x=row["anaemia_children_pct"], y=row["lsff_coverage_proxy_pct"],
+            text=row.get("country_name", row["iso3"]),
+            showarrow=False, xshift=8, yshift=5,
+            font=dict(size=9, color=FOUNDATION_BLUE, **SLIDE_FONT),
+        )
+        fig.add_trace(go.Scatter(
+            x=[row["anaemia_children_pct"]], y=[row["lsff_coverage_proxy_pct"]],
+            mode="markers",
+            marker=dict(size=row["_size"] + 6, color="rgba(0,0,0,0)",
+                        line=dict(color=FOUNDATION_BLUE, width=2)),
+            showlegend=False, hoverinfo="skip",
+        ))
+
+    # Median lines
+    x_med = plot_df["anaemia_children_pct"].median()
+    y_med = plot_df["lsff_coverage_proxy_pct"].median()
+    x_max = plot_df["anaemia_children_pct"].max() * 1.05
+    for x0, x1, y0, y1 in [(x_med, x_med, -5, 105), (0, x_max, y_med, y_med)]:
+        fig.add_shape(type="line", x0=x0, x1=x1, y0=y0, y1=y1,
+                      line=dict(color="#BBBBBB", dash="dot", width=1))
+
+    # Gap quadrant callout
+    fig.add_annotation(
+        x=x_max - 2, y=5,
+        text="<b>High burden,<br>no programme ⚠</b>",
+        showarrow=False, xanchor="right", yanchor="bottom",
+        font=dict(size=9, color="#AA3333", **SLIDE_FONT),
+        bgcolor="rgba(255,240,240,0.85)", borderpad=4,
+    )
+    fig.add_annotation(
+        x=2, y=97,
+        text="<b>Low burden,<br>programme in place ✓</b>",
+        showarrow=False, xanchor="left", yanchor="top",
+        font=dict(size=9, color="#1A8754", **SLIDE_FONT),
+        bgcolor="rgba(240,255,245,0.85)", borderpad=4,
+    )
+
+    fig.update_layout(
+        title=dict(
+            text="<b>Anaemia Burden vs. LSFF Programme Coverage</b><br>"
+                 "<span style='font-size:12px;color:#555'>"
+                 "Countries in the lower-right face the highest burden with the least coverage — "
+                 "the primary intervention gap  ·  Bubble size = stunting prevalence"
+                 "</span>",
+            font=dict(size=16, color=FOUNDATION_BLUE, **SLIDE_FONT),
+            x=0.02, y=0.97,
+        ),
+        paper_bgcolor=BG_SLIDE, plot_bgcolor="white",
+        font=dict(**SLIDE_FONT, size=11),
+        height=height,
+        xaxis=dict(title="Anaemia prevalence, children <5 (%)",
+                   showgrid=True, gridcolor=GRID_COLOR, zeroline=False, range=[0, x_max]),
+        yaxis=dict(title="LSFF wheat flour coverage proxy (%)",
+                   showgrid=True, gridcolor=GRID_COLOR, zeroline=False, range=[-5, 105]),
+        legend=dict(title="Wheat flour legislation", orientation="v",
+                    x=1.02, y=0.98, font=dict(size=10)),
+        margin=dict(l=70, r=160, t=90, b=70),
+    )
+    return fig
+
+
 # ── Export ────────────────────────────────────────────────────────────────────
 
 def export_slide_figures(df: pd.DataFrame, output_dir: Path | None = None):
@@ -465,6 +691,8 @@ def export_slide_figures(df: pd.DataFrame, output_dir: Path | None = None):
         "01_composite_burden_map":   composite_burden_map(df, height=520),
         "02_cooccurrence_scatter":   cooccurrence_scatter(df, height=580),
         "03_burden_profile_bars":    burden_profile_bars(df, n=15, height=580),
+        "04_lsff_coverage_map":      lsff_coverage_map(df, height=520),
+        "05_lsff_gap_scatter":       lsff_gap_scatter(df, height=540),
     }
 
     for name, fig in figures.items():

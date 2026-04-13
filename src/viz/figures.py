@@ -43,6 +43,7 @@ INDICATOR_CONFIG = {
     "hiv_prevalence_pct":         ("HIV prevalence, adults 15–49 (%)",         "Purples", "%"),
     "malaria_incidence_per1000":  ("Malaria incidence (per 1000 at risk)",     "Greens",  "per 1000"),
     "underweight_pct":            ("Underweight prevalence <5 (%)",            "PuRd",    "%"),
+    "lsff_coverage_proxy_pct":    ("LSFF wheat flour coverage, proxy (%)",     "YlGn",    "%"),
 }
 
 

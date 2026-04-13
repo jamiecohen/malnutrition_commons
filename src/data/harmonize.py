@@ -108,18 +108,38 @@ def load_all_sources() -> dict[str, pd.DataFrame]:
         subset=["stunting_pct"], how="all"
     )
 
+    # LSFF — FFI 2023 curated dataset (no time dimension: applies to all years)
+    lsff_path = RAW / "lsff" / "ffi_country_status.csv"
+    if lsff_path.exists():
+        lsff = pd.read_csv(lsff_path)
+        lsff = lsff[~lsff["iso3"].isin(AGGREGATE_ISO3)]
+        # Broadcast to all years in the panel by merging without year key later
+        sources["lsff"] = lsff[[
+            "iso3", "wheat_flour_legislation", "maize_flour_legislation",
+            "lsff_any_mandatory", "lsff_any_program", "lsff_coverage_proxy_pct",
+        ]]
+    else:
+        print("  [skip] LSFF data not found — run pull_lsff.py first")
+
     return sources
 
 
 # ── Merge into country-year panel ────────────────────────────────────────────
 
 def build_panel(sources: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Outer-join all sources on (iso3, year)."""
+    """Outer-join all sources on (iso3, year). LSFF has no year column — merged separately."""
+    # Sources with a year dimension
+    time_series_keys = [k for k in sources if k != "lsff"]
     base = sources["anaemia_children"]
-    for name, df in sources.items():
+    for name in time_series_keys:
         if name == "anaemia_children":
             continue
-        base = base.merge(df, on=["iso3", "year"], how="outer")
+        base = base.merge(sources[name], on=["iso3", "year"], how="outer")
+
+    # LSFF: broadcast across all years by merging on iso3 only
+    if "lsff" in sources:
+        base = base.merge(sources["lsff"], on="iso3", how="left")
+
     return base
 
 
@@ -168,12 +188,17 @@ def get_country_names() -> pd.DataFrame:
 # ── Most-recent-year snapshot ─────────────────────────────────────────────────
 
 def most_recent(panel: pd.DataFrame, window: tuple = (2010, 2023)) -> pd.DataFrame:
-    """For each country, take the most recent value within the recency window per indicator."""
+    """For each country, take the most recent value within the recency window per indicator.
+    LSFF columns (no time dimension) are carried through without a _year suffix."""
+    lsff_cols = [c for c in panel.columns if c.startswith("lsff_") or
+                 c in ("wheat_flour_legislation", "maize_flour_legislation")]
+
     filtered = panel[(panel["year"] >= window[0]) & (panel["year"] <= window[1])].copy()
-    # Sort descending by year so first row per country is most recent
     filtered = filtered.sort_values("year", ascending=False)
 
-    indicator_cols = [c for c in filtered.columns if c not in ("iso3", "year")]
+    # Time-varying indicators only
+    indicator_cols = [c for c in filtered.columns
+                      if c not in ("iso3", "year") and c not in lsff_cols]
     result = filtered[["iso3", "year"]].drop_duplicates("iso3", keep="first").copy()
 
     for col in indicator_cols:
@@ -182,6 +207,11 @@ def most_recent(panel: pd.DataFrame, window: tuple = (2010, 2023)) -> pd.DataFra
             columns={"year": f"{col}_year"}
         )
         result = result.merge(col_data, on="iso3", how="left")
+
+    # Re-attach LSFF columns (non-time-varying) directly
+    if lsff_cols:
+        lsff_data = filtered[["iso3"] + lsff_cols].drop_duplicates("iso3")
+        result = result.merge(lsff_data, on="iso3", how="left")
 
     return result
 

@@ -27,6 +27,8 @@ from src.viz.triple_burden import (
     composite_burden_map,
     cooccurrence_scatter as tb_scatter,
     burden_profile_bars,
+    lsff_coverage_map,
+    lsff_gap_scatter,
 )
 
 # ── Page config ──────────────────────────────────────────────────────────────
@@ -397,8 +399,9 @@ with tab5:
         "nutritional deficiencies, TB, HIV, and malaria co-occur in the same geographies."
     )
 
-    sub1, sub2, sub3 = st.tabs([
-        "Composite Burden Map", "Co-Occurrence Scatter", "Country Burden Profile"
+    sub1, sub2, sub3, sub4, sub5 = st.tabs([
+        "Composite Burden Map", "Co-Occurrence Scatter", "Country Burden Profile",
+        "LSFF Coverage Map", "Burden vs. LSFF Gap",
     ])
 
     with sub1:
@@ -427,6 +430,25 @@ with tab5:
         )
         fig_bars = burden_profile_bars(filtered_snap, n=n_countries, height=max(500, n_countries * 36))
         st.plotly_chart(fig_bars, use_container_width=True)
+
+    with sub4:
+        st.markdown(
+            "Wheat flour fortification legislation status by country. "
+            "**Green = mandatory programme**, **amber = voluntary**, **red = no programme**. "
+            "Coverage % is a proxy estimate (mandatory ≈ 75%, voluntary ≈ 20%, none = 0%) — "
+            "not a directly measured survey value."
+        )
+        fig_lsff_map = lsff_coverage_map(filtered_snap, height=500)
+        st.plotly_chart(fig_lsff_map, use_container_width=True)
+
+    with sub5:
+        st.markdown(
+            "**The intervention gap visual.** Countries in the lower-right — "
+            "high anaemia burden, no LSFF programme — are where fortification investment "
+            "has the most untapped leverage. Bubble size = stunting prevalence."
+        )
+        fig_lsff_gap = lsff_gap_scatter(filtered_snap, height=520)
+        st.plotly_chart(fig_lsff_gap, use_container_width=True)
 
     st.markdown("---")
     st.markdown(
