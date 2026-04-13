@@ -55,6 +55,16 @@ INDICATOR_CONFIG = {
     "low_birthweight_pct":        ("Low birthweight prevalence (%)",            "PuRd",    "%"),
     "preterm_birth_rate_pct":     ("Preterm birth rate (%)",                    "RdPu",    "%"),
     "sga_prevalence_pct":         ("Small for gestational age prevalence (%)",  "Oranges", "%"),
+    # ── Healthcare coverage ───────────────────────────────────────────────────
+    "anc4_coverage_pct":          ("ANC 4+ visits coverage (%)",                "Blues",   "%"),
+    "mcv1_coverage_pct":          ("Measles vaccine 1st dose (MCV1) coverage (%)", "Greens", "%"),
+    "mcv2_coverage_pct":          ("Measles vaccine 2nd dose (MCV2) coverage (%)", "BuGn",  "%"),
+    "dtp3_coverage_pct":          ("DTP3 immunization coverage (%)",            "Teal",    "%"),
+    "pcv3_coverage_pct":          ("Pneumococcal (PCV3) coverage (%)",          "GnBu",    "%"),
+    "rotac_coverage_pct":         ("Rotavirus (RotaC) coverage (%)",            "YlGn",    "%"),
+    # ── Childhood infectious disease & treatment ──────────────────────────────
+    "measles_reported_cases":     ("Measles reported cases (count)",            "Reds",    "cases"),
+    "ors_coverage_pct":           ("ORS treatment for child diarrhoea (%)",     "Purples", "%"),
     # ── Food fortification ────────────────────────────────────────────────────
     "lsff_coverage_proxy_pct":    ("LSFF wheat flour coverage, proxy (%)",     "YlGn",    "%"),
 }

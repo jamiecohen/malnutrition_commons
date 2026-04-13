@@ -105,6 +105,31 @@ def load_all_sources() -> dict[str, pd.DataFrame]:
     sources["low_birthweight"]    = load_gho_any_sex("low_birthweight.csv",    "low_birthweight_pct")
     sources["preterm_birth_rate"] = load_gho_any_sex("preterm_birth_rate.csv", "preterm_birth_rate_pct")
 
+    # Healthcare coverage — WHO GHO modelled national estimates (no sub-dimensions)
+    sources["anc4_coverage"]  = load_gho_any_sex("anc4_coverage.csv",  "anc4_coverage_pct")
+    sources["mcv1_coverage"]  = load_gho_any_sex("mcv1_coverage.csv",  "mcv1_coverage_pct")
+    sources["mcv2_coverage"]  = load_gho_any_sex("mcv2_coverage.csv",  "mcv2_coverage_pct")
+    sources["dtp3_coverage"]  = load_gho_any_sex("dtp3_coverage.csv",  "dtp3_coverage_pct")
+    sources["pcv3_coverage"]  = load_gho_any_sex("pcv3_coverage.csv",  "pcv3_coverage_pct")
+    sources["rotac_coverage"] = load_gho_any_sex("rotac_coverage.csv", "rotac_coverage_pct")
+    sources["ors_coverage"]   = load_gho_any_sex("ors_coverage.csv",   "ors_coverage_pct")
+
+    # Measles reported cases (raw count, not a rate — keep as integer)
+    if (RAW / "who_gho" / "measles_reported_cases.csv").exists():
+        msl = pd.read_csv(RAW / "who_gho" / "measles_reported_cases.csv")
+        msl = msl.rename(columns={"SpatialDim": "iso3", "TimeDim": "year",
+                                   "NumericValue": "measles_reported_cases"})
+        msl = msl[~msl["iso3"].isin(AGGREGATE_ISO3)]
+        msl = msl[msl["iso3"].str.len() == 3]
+        msl = msl[["iso3", "year", "measles_reported_cases"]].dropna(subset=["measles_reported_cases"])
+        msl["year"] = msl["year"].astype(int)
+        msl["measles_reported_cases"] = pd.to_numeric(msl["measles_reported_cases"], errors="coerce")
+        msl = msl.dropna(subset=["measles_reported_cases"])
+        msl = msl.drop_duplicates(subset=["iso3", "year"])
+        sources["measles_cases"] = msl
+    else:
+        print("  [skip] measles_reported_cases.csv not found")
+
     # UNICEF/WB child malnutrition
     uni = pd.read_csv(RAW / "unicef" / "child_malnutrition_wb.csv")
     uni = uni[~uni["iso3"].isin(AGGREGATE_ISO3)]

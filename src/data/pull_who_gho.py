@@ -26,6 +26,16 @@ INDICATORS = {
     # Birth outcomes
     "low_birthweight":          "LBW_PREVALENCE",         # Low birthweight prevalence (%) — 158 countries, 2000–2020
     "preterm_birth_rate":       "PRETERMBIRTH_RATE",      # Preterm birth rate (%) — 108 countries, 2010–2020
+    # Healthcare coverage
+    "anc4_coverage":            "WHS4_154",               # ANC 4+ visits (%) — 164 countries, 1990–2024
+    "mcv1_coverage":            "WHS8_110",               # Measles vaccine 1st dose coverage (%) — 182 countries, 2000–2024
+    "mcv2_coverage":            "MCV2",                   # Measles vaccine 2nd dose coverage (%) — 188 countries, 2000–2024
+    "dtp3_coverage":            "WHS4_100",               # DTP3 coverage (%) — 126 countries, 2000–2024
+    "pcv3_coverage":            "PCV3",                   # Pneumococcal PCV3 coverage (%) — 176 countries, 2008–2024
+    "rotac_coverage":           "ROTAC",                  # Rotavirus vaccine coverage (%) — 179 countries, 2006–2024
+    # Childhood infectious disease
+    "measles_reported_cases":   "WHS3_62",                # Measles reported cases (count) — 189 countries, 1974–2024
+    "ors_coverage":             "UNICEF_ORS",             # ORS treatment for child diarrhoea (%) — 97 countries, 1990–2017
 }
 
 
