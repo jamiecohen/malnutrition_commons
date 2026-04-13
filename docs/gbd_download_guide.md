@@ -1,8 +1,7 @@
-# GBD 2021 Data Download Guide
+# GBD Data Download Guide
 
-This guide explains how to manually export micronutrient deficiency prevalence
-data from the IHME GBD Results Tool and feed it into the Malnutrition Commons
-pipeline.
+This guide explains how to manually export prevalence data from the IHME GBD
+Results Tool and feed it into the Malnutrition Commons pipeline.
 
 > **Why manual?** IHME does not provide a public, unauthenticated API for GBD
 > data. Downloads require a free IHME account. Once downloaded, the CSV parser
@@ -12,6 +11,8 @@ pipeline.
 
 ## What you need to download
 
+### Export 1 — Micronutrient deficiencies (GBD Estimate: Cause of death and injury)
+
 | Indicator | GBD Cause Name | cause_id |
 |---|---|---|
 | Iron deficiency | Iron deficiency | 390 |
@@ -19,7 +20,18 @@ pipeline.
 | Zinc deficiency | Zinc deficiency | 391 |
 | Iodine deficiency | Iodine deficiency | 387 |
 
-You can download all four in a single export (see Step 5 below).
+### Export 2 — Birth outcomes (GBD Estimate: Cause of death and injury)
+
+| Indicator | GBD Cause Name | cause_id | Notes |
+|---|---|---|---|
+| Small for gestational age | Short gestation and low birth weight | 341 | Includes SGA + preterm LBW jointly |
+
+> **Note on SGA**: WHO GHO provides preterm birth rate and low birthweight
+> programmatically (pulled automatically by `pull_who_gho.py`). GBD is only
+> needed for SGA, which has no public API equivalent.
+
+You can combine both exports into a single download by selecting all five causes
+at once (see Step 3 below).
 
 ---
 
@@ -51,9 +63,13 @@ Set the following filters in the left panel:
 | **Location** | Select All → then deselect "Global", "Super-regions", "Regions" (keep countries only) |
 | **Age** | `<5 years` AND `All Ages` |
 | **Sex** | Both |
-| **Cause** | Search for each: "Iron deficiency", "Vitamin A deficiency", "Zinc deficiency", "Iodine deficiency" |
+| **Cause** | See below |
 
-**Tip**: Under **Cause**, expand "Nutritional deficiencies" to find these.
+**Causes to select:**
+- Under **Nutritional deficiencies**: Iron deficiency, Vitamin A deficiency, Zinc deficiency, Iodine deficiency
+- Under **Neonatal disorders**: Short gestation and low birth weight *(this is the SGA proxy)*
+
+**Tip**: Use the cause search box to find each one quickly rather than navigating the full hierarchy.
 
 ---
 
@@ -109,6 +125,7 @@ The script will:
    - `vitamin_a_deficiency.csv`  *(supplements OWID version)*
    - `zinc_deficiency.csv`  *(supplements OWID version)*
    - `iodine_deficiency.csv`
+   - `sga_prevalence.csv`  *(Short gestation / low birth weight, SGA proxy)*
 
 Then re-run the harmonization pipeline to incorporate the new indicators:
 ```bash
@@ -123,7 +140,7 @@ After running, check row counts:
 ```bash
 python -c "
 import pandas as pd
-for f in ['iron_deficiency','vitamin_a_deficiency','zinc_deficiency','iodine_deficiency']:
+for f in ['iron_deficiency','vitamin_a_deficiency','zinc_deficiency','iodine_deficiency','sga_prevalence']:
     try:
         df = pd.read_csv(f'data/raw/gbd/{f}.csv')
         print(f'{f}: {len(df):,} rows, {df.iso3.nunique()} countries, years {df.year.min()}-{df.year.max()}')

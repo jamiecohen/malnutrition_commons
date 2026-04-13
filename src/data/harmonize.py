@@ -101,6 +101,10 @@ def load_all_sources() -> dict[str, pd.DataFrame]:
     # Malaria estimated incidence per 1000 population at risk
     sources["malaria"] = load_gho_any_sex("malaria_incidence.csv", "malaria_incidence_per1000")
 
+    # Birth outcomes — WHO GHO (no sex/age dimension; load any-dim)
+    sources["low_birthweight"]    = load_gho_any_sex("low_birthweight.csv",    "low_birthweight_pct")
+    sources["preterm_birth_rate"] = load_gho_any_sex("preterm_birth_rate.csv", "preterm_birth_rate_pct")
+
     # UNICEF/WB child malnutrition
     uni = pd.read_csv(RAW / "unicef" / "child_malnutrition_wb.csv")
     uni = uni[~uni["iso3"].isin(AGGREGATE_ISO3)]
@@ -128,6 +132,7 @@ def load_all_sources() -> dict[str, pd.DataFrame]:
         "zinc_deficiency.csv":      "zinc_deficiency_pct",
         "iron_deficiency.csv":      "iron_deficiency_pct",
         "iodine_deficiency.csv":    "iodine_deficiency_pct",
+        "sga_prevalence.csv":       "sga_prevalence_pct",
     }
     for fname, col in gbd_indicators.items():
         fpath = GBD_RAW / fname

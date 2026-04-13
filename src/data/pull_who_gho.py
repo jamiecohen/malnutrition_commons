@@ -23,6 +23,9 @@ INDICATORS = {
     "tb_incidence":             "MDG_0000000020",
     "hiv_prevalence":           "MDG_0000000029",   # HIV prevalence adults 15–49 (%)
     "malaria_incidence":        "MALARIA_EST_INCIDENCE",  # Estimated malaria incidence (per 1000 at risk)
+    # Birth outcomes
+    "low_birthweight":          "LBW_PREVALENCE",         # Low birthweight prevalence (%) — 158 countries, 2000–2020
+    "preterm_birth_rate":       "PRETERMBIRTH_RATE",      # Preterm birth rate (%) — 108 countries, 2010–2020
 }
 
 

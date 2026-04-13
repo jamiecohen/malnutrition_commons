@@ -51,6 +51,10 @@ INDICATOR_CONFIG = {
     "zinc_deficiency_pct":        ("Zinc deficiency prevalence (%)",           "BuGn",    "%"),
     "iron_deficiency_pct":        ("Iron deficiency prevalence (%)",           "Reds",    "%"),
     "iodine_deficiency_pct":      ("Iodine deficiency prevalence (%)",         "Blues",   "%"),
+    # ── Birth outcomes ────────────────────────────────────────────────────────
+    "low_birthweight_pct":        ("Low birthweight prevalence (%)",            "PuRd",    "%"),
+    "preterm_birth_rate_pct":     ("Preterm birth rate (%)",                    "RdPu",    "%"),
+    "sga_prevalence_pct":         ("Small for gestational age prevalence (%)",  "Oranges", "%"),
     # ── Food fortification ────────────────────────────────────────────────────
     "lsff_coverage_proxy_pct":    ("LSFF wheat flour coverage, proxy (%)",     "YlGn",    "%"),
 }

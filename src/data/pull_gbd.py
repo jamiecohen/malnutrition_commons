@@ -124,10 +124,13 @@ def pull_all_owid(force: bool = False):
 
 # GBD cause IDs for micronutrient deficiencies (GBD 2021)
 GBD_CAUSES = {
+    # Micronutrient deficiencies
     390: ("iron_deficiency",       "iron_deficiency_pct"),
     389: ("vitamin_a_deficiency",  "vitamin_a_deficiency_pct"),
     391: ("zinc_deficiency",       "zinc_deficiency_pct"),
     387: ("iodine_deficiency",     "iodine_deficiency_pct"),
+    # Birth outcomes
+    341: ("sga_prevalence",        "sga_prevalence_pct"),   # Short gestation / low birth weight (SGA proxy)
 }
 
 # GBD metric IDs
