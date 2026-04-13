@@ -3,6 +3,9 @@ data/raw/
 *.csv.gz
 *.parquet
 
+# Virtual environment
+venv/
+
 # Python
 __pycache__/
 *.py[cod]
