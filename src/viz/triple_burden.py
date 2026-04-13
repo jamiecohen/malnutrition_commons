@@ -178,12 +178,15 @@ def cooccurrence_scatter(df: pd.DataFrame, height: int = 560) -> go.Figure:
         subset=["anaemia_children_pct", "tb_incidence_per100k"]
     ).copy()
 
-    # Size: malaria where available, otherwise small fixed size
-    plot_df["_size"] = plot_df["malaria_incidence_per1000"].fillna(5).clip(lower=5)
+    # Size: malaria where available, otherwise fixed size
+    if "malaria_incidence_per1000" in plot_df.columns:
+        plot_df["_size"] = plot_df["malaria_incidence_per1000"].fillna(5).clip(lower=5)
+    else:
+        plot_df["_size"] = 5.0
     plot_df["_size_scaled"] = np.sqrt(plot_df["_size"]) * 1.5  # sqrt scaling for visual
 
     # HIV color: use a 0–25 range to keep the scale readable
-    plot_df["_hiv"] = plot_df["hiv_prevalence_pct"].fillna(0)
+    plot_df["_hiv"] = plot_df["hiv_prevalence_pct"].fillna(0) if "hiv_prevalence_pct" in plot_df.columns else 0.0
 
     # Hover
     def hover(row):
