@@ -316,6 +316,15 @@ def parse_gbd_csv(gbd_dir: Path) -> dict[str, pd.DataFrame]:
 
         sub["year"] = pd.to_numeric(sub[year_col], errors="coerce").astype("Int64")
         sub["val"]  = pd.to_numeric(sub[val_col],  errors="coerce")
+        # GBD exports "Percent" metric as proportions (0–1); convert to percentage points
+        if "metric_name" in sub.columns:
+            is_pct = sub["metric_name"].str.contains("Percent", case=False, na=False)
+        elif metric_col and metric_col != "metric_id":
+            is_pct = sub[metric_col].str.contains("Percent", case=False, na=False)
+        else:
+            # Assume percent if values are all < 1.5 (proportions, not rates per 100k)
+            is_pct = sub["val"] < 1.5
+        sub.loc[is_pct, "val"] = sub.loc[is_pct, "val"] * 100
         sub = sub.dropna(subset=["val", "year", "_cause_id"])
 
         # Distribute rows to per-cause lists
@@ -339,8 +348,11 @@ def parse_gbd_csv(gbd_dir: Path) -> dict[str, pd.DataFrame]:
             .reset_index(drop=True)
         )
         out_path = RAW_GBD / f"{cname}.csv"
-        combined.to_csv(out_path, index=False)
-        print(f"  Saved {len(combined):,} rows → {out_path.relative_to(PROJECT_ROOT)}")
+        if combined.empty:
+            print(f"  [skip] {cname}: 0 rows parsed — keeping existing file if present")
+        else:
+            combined.to_csv(out_path, index=False)
+            print(f"  Saved {len(combined):,} rows → {out_path.relative_to(PROJECT_ROOT)}")
         out[cname] = combined
 
     return out
