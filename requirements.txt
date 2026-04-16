@@ -18,6 +18,9 @@ seaborn>=0.13
 streamlit>=1.30
 streamlit-folium>=0.18
 
+# Excel file support (required for MUMTA/AMANHI xlsx parsing)
+openpyxl>=3.1
+
 # Utilities
 tqdm>=4.66
 python-dotenv>=1.0
