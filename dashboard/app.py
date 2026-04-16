@@ -105,6 +105,27 @@ except Exception as _mumta_err:
     _MUMTA_VIZ_AVAILABLE = False
     _MUMTA_IMPORT_ERROR = str(_mumta_err)
 
+# ── Optional AMANHI import ──────────────────────────────────────────────────
+try:
+    from src.viz.amanhi import (
+        binfantis_by_site as amanhi_binfantis_by_site,
+        binfantis_vs_outcomes as amanhi_binfantis_vs_outcomes,
+        binfantis_vs_growth as amanhi_binfantis_vs_growth,
+        binfantis_cross_cohort as amanhi_binfantis_cross_cohort,
+        crp_distribution as amanhi_crp_distribution,
+        ferritin_distribution as amanhi_ferritin_distribution,
+        crp_vs_birth_outcomes as amanhi_crp_vs_birth_outcomes,
+        ferritin_vs_birth_outcomes as amanhi_ferritin_vs_birth_outcomes,
+        crp_ferritin_scatter as amanhi_crp_ferritin_scatter,
+        tac_top_pathogens as amanhi_tac_top_pathogens,
+        tac_pathogen_burden_vs_outcomes as amanhi_tac_burden_vs_outcomes,
+        tac_cross_cohort_comparison as amanhi_tac_cross_cohort,
+    )
+    _AMANHI_VIZ_AVAILABLE = True
+except Exception as _amanhi_err:
+    _AMANHI_VIZ_AVAILABLE = False
+    _AMANHI_IMPORT_ERROR = str(_amanhi_err)
+
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Malnutrition Data Commons",
@@ -979,364 +1000,652 @@ with tab2:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ── Tab 3: Deep Dive — Pakistan (MUMTA cohort) ──────────────────────────────
+# ── Tab 3: Deep Dive — Pakistan ─────────────────────────────────────────────
 # ══════════════════════════════════════════════════════════════════════════════
 with tab3:
-    st.markdown("## MUMTA Pakistan — Prospective Birth Cohort")
+    st.markdown("## Deep Dive: Pakistan — Cohort Data")
     st.markdown(
-        "The MUMTA cohort (Matiari, Sindh) provides ground-truth individual-level data "
-        "on maternal nutrition, birth outcomes, infant growth, and gut microbiome composition. "
-        "This tab compares cohort observations with the modelled country-level estimates "
-        "used elsewhere in the commons."
+        "Two complementary Pakistani cohorts provide ground-truth individual-level data "
+        "on maternal nutrition, birth outcomes, infant growth, and the gut microbiome."
     )
 
-    # Check for processed MUMTA data
-    _mumta_summary_path = ROOT / "data" / "processed" / "mumta" / "mumta_cohort_summary.csv"
-    _mumta_data_exists = _mumta_summary_path.exists()
-
-    if not _mumta_data_exists:
-        st.info(
-            "MUMTA data processing required. Run:\n\n"
-            "```\npython3 src/data/process_mumta.py\n```\n\n"
-            "This will process the raw cohort data and generate summary CSVs "
-            "in `data/processed/mumta/`."
-        )
-    elif not _MUMTA_VIZ_AVAILABLE:
-        _err_msg = globals().get("_MUMTA_IMPORT_ERROR", "unknown error")
-        st.warning(
-            "MUMTA visualization module failed to load. Ensure `src/viz/mumta.py` exists "
-            "and exports the required plotting functions."
-        )
-        st.code(_err_msg, language="text")
-    else:
-        # Load MUMTA processed data
-        _mumta_cohort = pd.read_csv(_mumta_summary_path)
-        _mumta_dir = ROOT / "data" / "processed" / "mumta"
-
-        # ── Section 1: Cohort Overview ───────────────────────────────────────
-        st.markdown("### Cohort Overview")
-        _m = cohort_overview_metrics(_mumta_cohort)
-        _ov1, _ov2, _ov3, _ov4 = st.columns(4)
-        _ov1.metric("Enrolled", f"{_m.get('n_enrolled', 0):,}")
-        _ov2.metric("Live births", f"{_m.get('n_live_births', 0):,}")
-        _ov3.metric("Stillbirths", f"{_m.get('n_stillbirths', 0):,}")
-        _ov4.metric("Miscarriages", f"{_m.get('n_miscarriages', 0):,}")
-
-        _ov5, _ov6, _ov7, _ov8 = st.columns(4)
-        _ov5.metric("LBW (<2500g)", f"{_m.get('lbw_pct', 0)}%")
-        _ov6.metric("Preterm (<37wk)", f"{_m.get('preterm_pct', 0)}%")
-        _ov7.metric("Mean birthweight", f"{_m.get('mean_birth_weight', 0):,.0f}g")
-        _ov8.metric("Stunted at birth", f"{_m.get('stunted_birth_pct', 0)}%")
-
-        _ov9, _ov10, _ov11, _ov12 = st.columns(4)
-        _ov9.metric("Anaemia 19wk", f"{_m.get('anaemia_19wk_pct', 0)}%")
-        _ov10.metric("Anaemia 32wk", f"{_m.get('anaemia_32wk_pct', 0)}%",
-                     delta=f"+{(_m.get('anaemia_32wk_pct',0) - _m.get('anaemia_19wk_pct',0)):.0f}pp",
-                     delta_color="inverse")
-        _ov11.metric("Iron def 19wk", f"{_m.get('iron_def_19wk_pct', 0)}%")
-        _ov12.metric("Iron def 32wk", f"{_m.get('iron_def_32wk_pct', 0)}%")
-
-        st.markdown("---")
-
-        # ── Section 2: Birth Outcomes by Treatment Arm ────────────────────────
-        st.markdown("### Birth Outcomes by Treatment Arm")
-        _fig_bo = birth_outcomes_by_arm(_mumta_cohort)
-        st.plotly_chart(_fig_bo, use_container_width=True)
-
-        st.markdown("---")
-
-        # ── Section 3: Birth Outcomes by Maternal Risk Factor ────────────────
-        st.markdown("### Birth Outcomes by Maternal Risk Factor")
-        st.markdown(
-            "How do birth outcomes differ by maternal nutritional status at enrollment? "
-            "Select a risk factor to stratify outcomes."
-        )
-
-        _rf_options = {
-            "Anaemia (Hb < 11 g/dL at 19 weeks)": "anaemia",
-            "BMI category (enrollment)": "bmi",
-            "MUAC status (< 23 cm = malnourished)": "muac",
-            "Iron deficiency (ferritin < 15 ng/mL at 19 weeks)": "iron_deficiency",
-        }
-        _rf_col1, _rf_col2 = st.columns([2, 1])
-        with _rf_col1:
-            _rf_label = st.selectbox(
-                "Risk factor",
-                list(_rf_options.keys()),
-                index=0,
-                key="mumta_rf_sel",
-            )
-        _rf_key = _rf_options[_rf_label]
-
-        # Grouped bar chart: outcome rates by stratum
-        _fig_rf = birth_outcomes_by_risk_factor(_mumta_cohort, risk_factor=_rf_key)
-        st.plotly_chart(_fig_rf, use_container_width=True)
-
-        # Birth weight distribution histogram
-        _fig_bw = birth_weight_distribution(_mumta_cohort, risk_factor=_rf_key)
-        st.plotly_chart(_fig_bw, use_container_width=True)
-
-        # Summary table across all risk factors
-        with st.expander("View summary table — all risk factors"):
-            _rf_table = adverse_outcome_summary(_mumta_cohort)
-            if not _rf_table.empty:
-                st.dataframe(_rf_table, use_container_width=True, hide_index=True)
-            else:
-                st.info("Insufficient data for summary table.")
-
-        st.markdown("---")
-
-        # ── Section 4: Maternal Iron & Anemia ────────────────────────────────
-        st.markdown("### Maternal Iron & Anemia Trajectory")
-        _anemia_path = _mumta_dir / "mumta_maternal_anemia.csv"
-        if _anemia_path.exists():
-            _anemia_df = pd.read_csv(_anemia_path)
-            _fig_anemia = maternal_anemia_trajectory(_anemia_df)
-            st.plotly_chart(_fig_anemia, use_container_width=True)
-        else:
-            st.info("Maternal anemia trajectory data not yet processed.")
-
-        st.markdown("---")
-
-        # ── Section 4: Infant Growth ─────────────────────────────────────────
-        st.markdown("### Infant Growth Curves")
-        _growth_path = _mumta_dir / "mumta_infant_growth.csv"
-        if _growth_path.exists():
-            _growth_df = pd.read_csv(_growth_path)
-            _growth_metric = st.selectbox(
-                "Z-score metric",
-                ["laz", "waz", "wlz"],
-                format_func={"laz": "Length-for-age (LAZ)",
-                             "waz": "Weight-for-age (WAZ)",
-                             "wlz": "Weight-for-length (WLZ)"}.get,
-                key="mumta_growth_metric",
-            )
-            _fig_growth = infant_growth_curves(_growth_df, metric=_growth_metric)
-            st.plotly_chart(_fig_growth, use_container_width=True)
-        else:
-            st.info("Infant growth data not yet processed.")
-
-        st.markdown("---")
-
-        # ── Section 5: B. infantis Deep Dive ────────────────────────────────
-        st.markdown("### B. infantis Colonization & Protective Effects")
-        st.markdown(
-            "*B. infantis* is a key commensal bacterium hypothesized to protect against "
-            "enteric pathogens and gut inflammation, potentially improving nutrient absorption "
-            "and infant growth. This section explores colonization patterns and associations "
-            "with pathogens, gut inflammation, and growth in the MUMTA substudy (~100–106 "
-            "infants with qPCR data per timepoint)."
-        )
-        _binfantis_path = _mumta_dir / "mumta_binfantis.csv"
-        if _binfantis_path.exists():
-            _binfantis_df = pd.read_csv(_binfantis_path)
-
-            _binf_view = st.radio(
-                "B. infantis view",
-                [
-                    "Colonization trajectory",
-                    "By treatment arm",
-                    "vs. Enteric pathogens",
-                    "vs. Gut inflammation",
-                    "vs. Infant growth",
-                ],
-                horizontal=True,
-                key="mumta_binf_view",
-            )
-
-            if _binf_view == "Colonization trajectory":
-                _fig_binf_traj = binfantis_colonization_corrected(_binfantis_df)
-                st.plotly_chart(_fig_binf_traj, use_container_width=True)
-                st.markdown(
-                    '<div class="context-box">'
-                    '<b>Key pattern:</b> Infant B. infantis colonization rises from 77% at 1–2 months '
-                    'to 92% at 5–6 months (among tested). Maternal colonization is much lower '
-                    '(2–26%), suggesting infant acquisition is primarily environmental/dietary '
-                    'rather than vertical transmission. Note: only ~100–106 participants per '
-                    'timepoint were tested in the qPCR substudy.'
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
-
-            elif _binf_view == "By treatment arm":
-                _fig_binf_arm = binfantis_by_arm(_binfantis_df)
-                st.plotly_chart(_fig_binf_arm, use_container_width=True)
-                st.markdown(
-                    '<div class="context-box">'
-                    '<b>Arm comparison:</b> Maamta (Arm B) shows the highest colonization (92–96%), '
-                    'while Maamta+Choline+Nicotinamide (Arm D) shows the lowest (61–86%). '
-                    'Small sample sizes per arm (~20–36) limit statistical power, but the '
-                    'pattern suggests the choline/nicotinamide combination may alter the gut '
-                    'environment in ways that affect B. infantis colonization.'
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
-
-            elif _binf_view == "vs. Enteric pathogens":
-                _tac_path = _mumta_dir / "mumta_tac_pathogens.csv"
-                if _tac_path.exists():
-                    _tac_df_binf = pd.read_csv(_tac_path)
-                    _fig_binf_path = binfantis_vs_pathogens(_binfantis_df, _tac_df_binf)
-                    st.plotly_chart(_fig_binf_path, use_container_width=True)
-                    st.markdown(
-                        '<div class="context-box">'
-                        '<b>Mixed signal:</b> B. infantis+ infants show <i>lower</i> detection of '
-                        'EAEC and Shigella/EIEC (consistent with competitive exclusion), but '
-                        '<i>higher</i> detection of Campylobacter and Giardia. This may reflect '
-                        'confounding by shared environmental exposures rather than a causal effect '
-                        '— infants in environments with more diverse microbiome exposure may acquire '
-                        'both B. infantis and enteric pathogens. Sample sizes are small (n≈14 for '
-                        'B. infantis− group), limiting statistical interpretation.'
-                        '</div>',
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.info("TAC pathogen data not available.")
-
-            elif _binf_view == "vs. Gut inflammation":
-                _inflam_path_binf = _mumta_dir / "mumta_gut_inflammation.csv"
-                if _inflam_path_binf.exists():
-                    _inflam_df_binf = pd.read_csv(_inflam_path_binf)
-                    _fig_binf_inflam = binfantis_vs_inflammation(_binfantis_df, _inflam_df_binf)
-                    st.plotly_chart(_fig_binf_inflam, use_container_width=True)
-                    st.markdown(
-                        '<div class="context-box">'
-                        '<b>Counter-intuitive finding:</b> B. infantis+ infants show <i>higher</i> '
-                        'median MPO than B. infantis− infants. This likely reflects the small and '
-                        'imbalanced comparison group (n≈8–24 for B. infantis−) rather than a true '
-                        'harmful effect. MPO levels are extremely high across all infants in this '
-                        'cohort (median >1000 ng/mL), consistent with widespread environmental '
-                        'enteric dysfunction (EED) in this setting.'
-                        '</div>',
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.info("Gut inflammation data not available.")
-
-            else:  # vs. Infant growth
-                _growth_path_binf = _mumta_dir / "mumta_infant_growth.csv"
-                if _growth_path_binf.exists():
-                    _growth_df_binf = pd.read_csv(_growth_path_binf)
-                    _fig_binf_growth = binfantis_vs_growth(_binfantis_df, _growth_df_binf)
-                    st.plotly_chart(_fig_binf_growth, use_container_width=True)
-                    st.markdown(
-                        '<div class="context-box">'
-                        '<b>No clear protective signal:</b> B. infantis+ infants actually show '
-                        'slightly <i>lower</i> LAZ than B. infantis− infants at most timepoints, '
-                        'though the difference is within standard error bounds. The B. infantis− '
-                        'group is very small (n≈8–24), and these are observational comparisons '
-                        'subject to confounding. A protective effect of B. infantis may require '
-                        'higher colonization density (lower Ct) rather than simple presence/absence.'
-                        '</div>',
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    st.info("Infant growth data not available.")
-        else:
-            st.info("B. infantis data not yet processed. Run `python src/data/process_mumta.py --force`.")
-
-        st.markdown("---")
-
-        # ── Section 6: Enteric Pathogen Panel (TAC) ──────────────────────────
-        st.markdown("### Enteric Pathogen Panel (TaqMan Array Card)")
-        st.markdown(
-            "TAC data from a substudy (~200 participants) provides qPCR-based detection "
-            "of 37 enteric pathogens across maternal and infant stool specimens. "
-            "Ct < 35 = detected. These data reveal the scale of environmental enteric "
-            "pathogen exposure in this population."
-        )
-        _tac_path = _mumta_dir / "mumta_tac_pathogens.csv"
-        if _tac_path.exists():
-            _tac_df = pd.read_csv(_tac_path)
-
-            _tac_view = st.radio(
-                "TAC view",
-                ["Detection heatmap", "Top pathogens", "Pathogen burden trajectory"],
-                horizontal=True,
-                key="mumta_tac_view",
-            )
-
-            if _tac_view == "Detection heatmap":
-                _tac_specimen = st.radio(
-                    "Specimen",
-                    ["maternal", "infant"],
-                    horizontal=True,
-                    key="mumta_tac_specimen",
-                )
-                _fig_tac_hm = pathogen_detection_heatmap(_tac_df, specimen_type=_tac_specimen)
-                st.plotly_chart(_fig_tac_hm, use_container_width=True)
-
-            elif _tac_view == "Top pathogens":
-                _fig_tac_top = top_pathogens_by_timepoint(_tac_df, n_top=10)
-                st.plotly_chart(_fig_tac_top, use_container_width=True)
-
-            else:  # Pathogen burden trajectory
-                _fig_tac_burden = pathogen_burden_trajectory(_tac_df)
-                st.plotly_chart(_fig_tac_burden, use_container_width=True)
-
-            st.markdown(
-                '<div class="context-box">'
-                '<b>Key observation:</b> Maternal stool shows high baseline pathogen carriage '
-                '(Giardia ~57%, EAEC ~58%, EPEC ~62% at 19 weeks). Infant pathogen acquisition '
-                'accelerates after 3 months, with Giardia rising from 6% at 1-2 months to 43% '
-                'by 12 months — consistent with the environmental enteric dysfunction (EED) '
-                'pathway hypothesized to impair nutrient absorption and linear growth.'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.info("TAC pathogen data not yet processed. Run `python src/data/process_mumta.py --force`.")
-
-        st.markdown("---")
-
-        # ── Section 7: Gut Inflammation & Growth ─────────────────────────────
-        st.markdown("### Gut Inflammation & Infant Growth")
-        st.markdown(
-            "Linking fecal MPO (myeloperoxidase, a marker of gut inflammation / EED) "
-            "to concurrent infant length-for-age Z-scores (LAZ). Higher gut inflammation "
-            "is hypothesized to impair nutrient absorption and drive growth faltering."
-        )
-        _inflam_path = _mumta_dir / "mumta_gut_inflammation.csv"
-        _growth_path = _mumta_dir / "mumta_infant_growth.csv"
-        if _inflam_path.exists() and _growth_path.exists():
-            _inflam_df = pd.read_csv(_inflam_path)
-            _growth_df_gut = pd.read_csv(_growth_path)
-            _fig_mpo_growth = gut_inflammation_vs_growth(_inflam_df, _growth_df_gut)
-            st.plotly_chart(_fig_mpo_growth, use_container_width=True)
-
-            st.markdown(
-                '<div class="context-box">'
-                '<b>Relevance to product strategy:</b> If gut inflammation mediates growth '
-                'faltering, then interventions targeting the maternal/infant gut (Azithromycin '
-                'in Arm C, Choline+Nicotinamide in Arm D) may modify this pathway. The MPO–LAZ '
-                'relationship across arms will indicate whether the interventions reduce gut '
-                'inflammation and whether that translates to improved growth.'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.info("Gut inflammation or infant growth data not yet processed.")
-
-        st.markdown("---")
-
-        # ── Section 8: Model vs. Cohort Validation ───────────────────────────
-        st.markdown("### Model vs. Cohort Comparison")
-        st.markdown(
-            "How do the modelled country-level estimates (used in the Product Impact tab) "
-            "compare against observed cohort-level values from the MUMTA cohort?"
-        )
-        _pak_row = snap[snap["iso3"] == "PAK"]
-        if not _pak_row.empty:
-            _fig_validation = model_vs_cohort_comparison(_mumta_cohort, _pak_row.iloc[0])
-            st.plotly_chart(_fig_validation, use_container_width=True)
-        else:
-            st.info("Pakistan snapshot data not available for comparison.")
+    _pak_cohort = st.radio(
+        "Select cohort",
+        ["MUMTA Cohort", "AMANHI Cohort", "Cross-Cohort Comparison"],
+        horizontal=True,
+        key="pak_cohort_selector",
+    )
 
     st.markdown("---")
-    st.markdown(
-        "_Source: MUMTA Prospective Birth Cohort, Matiari District, Sindh, Pakistan. "
-        "Data collection ongoing. Contact: Nutrition PST._"
-    )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # ── AMANHI Cohort ────────────────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════════
+    if _pak_cohort == "AMANHI Cohort":
+        st.markdown("## AMANHI — WHO Multi-Country Observational Cohort")
+        st.markdown(
+            "The Alliance for Maternal and Newborn Health Improvement (AMANHI) cohort "
+            "studies the maternal gut microbiome across **Pakistan, Bangladesh, and Tanzania**. "
+            "Unlike the interventional MUMTA cohort, AMANHI is observational — providing "
+            "a broader population baseline with unique biomarkers (serum CRP, ferritin) "
+            "not available in MUMTA."
+        )
+
+        _amanhi_neo_path = ROOT / "data" / "processed" / "amanhi" / "amanhi_neonatal.csv"
+        _amanhi_bio_path = ROOT / "data" / "processed" / "amanhi" / "amanhi_bioanalytes.csv"
+        _amanhi_tac_path = ROOT / "data" / "processed" / "amanhi" / "amanhi_maternal_tac.csv"
+
+        if not _amanhi_neo_path.exists():
+            st.info(
+                "AMANHI data processing required. Run:\n\n"
+                "```\npython3 src/data/process_amanhi.py\n```"
+            )
+        elif not _AMANHI_VIZ_AVAILABLE:
+            _err_msg = globals().get("_AMANHI_IMPORT_ERROR", "unknown error")
+            st.warning("AMANHI visualization module failed to load.")
+            st.code(_err_msg, language="text")
+        else:
+            _amanhi_neo = pd.read_csv(_amanhi_neo_path)
+            _amanhi_bio = pd.read_csv(_amanhi_bio_path) if _amanhi_bio_path.exists() else None
+            _amanhi_tac = pd.read_csv(_amanhi_tac_path) if _amanhi_tac_path.exists() else None
+
+            # ── Cohort Overview Metrics ──────────────────────────────────────
+            st.markdown("### Cohort Overview")
+            _pak_am = _amanhi_neo[_amanhi_neo["site"] == "PAK"]
+            _bgd_am = _amanhi_neo[_amanhi_neo["site"] == "BGD"]
+            _tza_am = _amanhi_neo[_amanhi_neo["site"] == "TZA"]
+
+            _am1, _am2, _am3 = st.columns(3)
+            _am1.metric("Pakistan", f"{len(_pak_am)} neonates")
+            _am2.metric("Bangladesh", f"{len(_bgd_am)} neonates")
+            _am3.metric("Tanzania", f"{len(_tza_am)} neonates")
+
+            _am4, _am5, _am6, _am7 = st.columns(4)
+            _am4.metric("LBW (PAK)", f"{_pak_am['lbw'].mean():.0%}")
+            _am5.metric("Preterm (PAK)", f"{_pak_am['preterm'].mean():.0%}")
+            _am6.metric("SGA (PAK)", f"{_pak_am['sga'].mean():.0%}")
+            _am7.metric("Mean BW (PAK)", f"{_pak_am['birth_weight_g'].mean():,.0f}g")
+
+            if _amanhi_bio is not None:
+                _am8, _am9, _am10, _am11 = st.columns(4)
+                _am8.metric("Iron Deficient", f"{_amanhi_bio['iron_deficient'].mean():.0%}")
+                _am9.metric("CRP Elevated", f"{_amanhi_bio['crp_elevated'].mean():.0%}")
+                _am10.metric("Median Ferritin", f"{_amanhi_bio['ferritin_ng_ml'].median():.0f} ng/mL")
+                _am11.metric("Median CRP", f"{_amanhi_bio['crp_mg_dl'].median():.2f} mg/dL")
+
+            st.markdown("---")
+
+            # ── Section 1: B. infantis ───────────────────────────────────────
+            st.markdown("### B. infantis Colonization")
+            st.markdown(
+                "Neonatal stool samples tested for *B. infantis* and *B. longum* by qPCR. "
+                "AMANHI provides a cross-country snapshot (single neonatal timepoint) across "
+                "three sites with varying colonization rates."
+            )
+
+            _am_bi_view = st.radio(
+                "B. infantis view",
+                ["By country", "vs Birth outcomes", "vs Growth"],
+                horizontal=True, key="amanhi_bi_view",
+            )
+
+            if _am_bi_view == "By country":
+                st.plotly_chart(amanhi_binfantis_by_site(_amanhi_neo), use_container_width=True)
+                st.info(
+                    "**Key finding**: B. infantis colonization varies 2-fold across sites — "
+                    "highest in Bangladesh (58%), intermediate in Pakistan (51%), "
+                    "lowest in Tanzania (34%). Delivery mode, breastfeeding practices, "
+                    "and environmental factors may explain the gradient."
+                )
+            elif _am_bi_view == "vs Birth outcomes":
+                st.plotly_chart(amanhi_binfantis_vs_outcomes(_amanhi_neo), use_container_width=True)
+                st.info(
+                    "**Interpretation**: Comparing birth outcomes between B. infantis colonized "
+                    "and non-colonized neonates. Note: B. infantis status is measured *after* "
+                    "birth, so any associations are correlational, not causal."
+                )
+            else:
+                st.plotly_chart(amanhi_binfantis_vs_growth(_amanhi_neo), use_container_width=True)
+                st.info(
+                    "**Note**: Growth z-scores at birth and 6 months by B. infantis status. "
+                    "AMANHI has the advantage of 6-month follow-up anthropometry linked to "
+                    "neonatal microbiome status (n=266 Pakistan neonates)."
+                )
+
+            st.markdown("---")
+
+            # ── Section 2: Bioanalytes — CRP & Ferritin ──────────────────────
+            if _amanhi_bio is not None:
+                st.markdown("### Maternal Bioanalytes: CRP & Iron Status")
+                st.markdown(
+                    "AMANHI uniquely provides **serum CRP** (systemic inflammation marker) "
+                    "and **ferritin** (iron stores) — biomarkers not available in the MUMTA "
+                    "dataset. This enables direct testing of the inflammation–iron–birth outcome "
+                    "pathway."
+                )
+
+                _am_bio_view = st.radio(
+                    "Bioanalyte view",
+                    ["CRP distribution", "Ferritin distribution", "CRP vs Ferritin",
+                     "CRP vs Outcomes", "Iron status vs Outcomes"],
+                    horizontal=True, key="amanhi_bio_view",
+                )
+
+                if _am_bio_view == "CRP distribution":
+                    st.plotly_chart(amanhi_crp_distribution(_amanhi_bio), use_container_width=True)
+                    st.info(
+                        "**Key finding**: 47% of pregnant women have elevated CRP (>0.5 mg/dL), "
+                        "indicating widespread subclinical inflammation in this Pakistani population. "
+                        "Elevated CRP during pregnancy is associated with adverse birth outcomes "
+                        "and may confound ferritin-based iron deficiency assessment."
+                    )
+                elif _am_bio_view == "Ferritin distribution":
+                    st.plotly_chart(amanhi_ferritin_distribution(_amanhi_bio), use_container_width=True)
+                    st.info(
+                        "**Key finding**: 70% of women are iron deficient (ferritin <15 ng/mL). "
+                        "However, ferritin is an acute-phase reactant — in the presence of "
+                        "inflammation (47% have elevated CRP), some women classified as iron "
+                        "replete may actually be iron deficient with falsely elevated ferritin."
+                    )
+                elif _am_bio_view == "CRP vs Ferritin":
+                    st.plotly_chart(amanhi_crp_ferritin_scatter(_amanhi_bio), use_container_width=True)
+                    st.info(
+                        "**Interpretation**: The lower-left quadrant (low CRP, low ferritin) represents "
+                        "true iron deficiency without inflammation. The upper-right quadrant "
+                        "(elevated CRP, higher ferritin) may mask iron deficiency — WHO recommends "
+                        "adjusting ferritin thresholds when CRP is elevated."
+                    )
+                elif _am_bio_view == "CRP vs Outcomes":
+                    st.plotly_chart(amanhi_crp_vs_birth_outcomes(_amanhi_bio, _amanhi_neo), use_container_width=True)
+                    st.info(
+                        "**Note**: This links maternal serum CRP status to neonatal birth outcomes "
+                        "via participant ID. Only participants with both bioanalyte and neonatal "
+                        "outcome data are included."
+                    )
+                else:
+                    st.plotly_chart(amanhi_ferritin_vs_birth_outcomes(_amanhi_bio, _amanhi_neo), use_container_width=True)
+                    st.info(
+                        "**Note**: Iron deficiency (ferritin <15 ng/mL) vs birth outcomes. "
+                        "This direct biomarker–outcome link is one of the unique contributions "
+                        "of the AMANHI dataset to the commons."
+                    )
+
+                st.markdown("---")
+
+            # ── Section 3: Maternal TAC Enteropathogens ──────────────────────
+            if _amanhi_tac is not None:
+                st.markdown("### Maternal Enteropathogens (TAC Panel)")
+                st.markdown(
+                    "TaqMan Array Card (TAC) qPCR panel detecting 55 enteric pathogen targets "
+                    "in maternal stool samples from 107 Pakistani mothers. "
+                    "High pathogen burden during pregnancy may contribute to maternal inflammation "
+                    "and adverse birth outcomes through environmental enteric dysfunction."
+                )
+
+                _am_tac_view = st.radio(
+                    "TAC view",
+                    ["Top pathogens", "Pathogen burden vs Outcomes"],
+                    horizontal=True, key="amanhi_tac_view",
+                )
+
+                if _am_tac_view == "Top pathogens":
+                    st.plotly_chart(amanhi_tac_top_pathogens(_amanhi_tac), use_container_width=True)
+                    st.info(
+                        "**Key finding**: EAEC (62%) and EPEC (56%) are the most prevalent "
+                        "maternal enteropathogens, consistent with high environmental exposure "
+                        "in this setting. Giardia (24%) and ETEC (32%) are also common."
+                    )
+                else:
+                    st.plotly_chart(amanhi_tac_burden_vs_outcomes(_amanhi_tac), use_container_width=True)
+                    st.info(
+                        "**Interpretation**: Does higher maternal pathogen burden associate with "
+                        "worse birth outcomes? Total number of detected pathogens per mother "
+                        "compared across outcome groups."
+                    )
+
+        st.markdown("---")
+        st.markdown(
+            "_Source: WHO AMANHI (Alliance for Maternal and Newborn Health Improvement) — "
+            "PDO Maternal Gut Microbiome study. Pakistan site (Karachi). "
+            "Data: neonatal qPCR (n=266 PAK), bioanalytes (n=1,937), maternal TAC (n=107)._"
+        )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # ── Cross-Cohort Comparison ──────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════════
+    elif _pak_cohort == "Cross-Cohort Comparison":
+        st.markdown("## Cross-Cohort: MUMTA vs AMANHI (Pakistan)")
+        st.markdown(
+            "Comparing findings from two complementary Pakistani cohorts:\n\n"
+            "| | MUMTA | AMANHI |\n"
+            "|--|-------|--------|\n"
+            "| **Design** | RCT (4 arms) | Observational |\n"
+            "| **Site** | Matiari, Sindh | Karachi |\n"
+            "| **N** | 1,884 enrolled | 266 neonates (PAK) |\n"
+            "| **Timepoints** | 10 (birth–12mo) | Birth + 6mo |\n"
+            "| **Unique data** | Intervention effects, longitudinal microbiome | Serum CRP/ferritin, cross-country |\n"
+        )
+
+        _mumta_bi_path = ROOT / "data" / "processed" / "mumta" / "mumta_binfantis.csv"
+        _mumta_tac_path_file = ROOT / "data" / "processed" / "mumta" / "mumta_tac_pathogens.csv"
+        _amanhi_neo_path = ROOT / "data" / "processed" / "amanhi" / "amanhi_neonatal.csv"
+        _amanhi_tac_path = ROOT / "data" / "processed" / "amanhi" / "amanhi_maternal_tac.csv"
+
+        _have_mumta_cross = _mumta_bi_path.exists() and _MUMTA_VIZ_AVAILABLE
+        _have_amanhi_cross = _amanhi_neo_path.exists() and _AMANHI_VIZ_AVAILABLE
+
+        if _have_mumta_cross and _have_amanhi_cross:
+            _amanhi_neo = pd.read_csv(_amanhi_neo_path)
+            _mumta_bi = pd.read_csv(_mumta_bi_path)
+
+            # ── B. infantis cross-cohort ─────────────────────────────────────
+            st.markdown("### B. infantis Colonization: MUMTA vs AMANHI")
+            st.markdown(
+                "AMANHI captures a single neonatal timepoint; MUMTA provides longitudinal "
+                "tracking across multiple infant timepoints. Comparing colonization rates "
+                "across cohorts helps validate prevalence estimates."
+            )
+            st.plotly_chart(
+                amanhi_binfantis_cross_cohort(_amanhi_neo, _mumta_bi),
+                use_container_width=True,
+            )
+            st.info(
+                "**Interpretation**: AMANHI's neonatal rate (~51%) serves as a baseline; "
+                "MUMTA's longitudinal data shows how colonization evolves over the first "
+                "year of life. Differences may reflect cohort design (observational vs RCT), "
+                "geographic site (Karachi vs Matiari), and timing of sample collection."
+            )
+
+            st.markdown("---")
+
+            # ── TAC cross-cohort ─────────────────────────────────────────────
+            if _amanhi_tac_path.exists() and _mumta_tac_path_file.exists():
+                st.markdown("### Maternal Pathogen Profile: MUMTA vs AMANHI")
+                st.markdown(
+                    "Both cohorts include TAC panels for Pakistani mothers. Comparing "
+                    "pathogen detection rates across sites reveals shared and site-specific "
+                    "enteric pathogen exposures."
+                )
+                _amanhi_tac = pd.read_csv(_amanhi_tac_path)
+                _mumta_tac_data = pd.read_csv(_mumta_tac_path_file)
+                st.plotly_chart(
+                    amanhi_tac_cross_cohort(_amanhi_tac, _mumta_tac_data),
+                    use_container_width=True,
+                )
+                st.info(
+                    "**Note**: AMANHI maternal TAC covers 107 mothers (Karachi); "
+                    "MUMTA TAC is a substudy of ~200 mothers (Matiari). "
+                    "Pathogen naming may differ slightly between labs — "
+                    "only overlapping targets are shown."
+                )
+        else:
+            st.warning("Both MUMTA and AMANHI processed data are required for cross-cohort comparison.")
+
+        st.markdown("---")
+        st.markdown(
+            "_Cross-cohort comparison of MUMTA (Matiari, Sindh) and AMANHI (Karachi). "
+            "Different study designs, sites, and populations — interpret differences accordingly._"
+        )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # ── MUMTA Cohort (original content) ──────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════════
+    else:
+        st.markdown("## MUMTA — Prospective Birth Cohort (RCT)")
+        st.markdown(
+            "The MUMTA cohort (Matiari, Sindh) provides ground-truth individual-level data "
+            "on maternal nutrition, birth outcomes, infant growth, and gut microbiome composition. "
+            "This tab compares cohort observations with the modelled country-level estimates "
+            "used elsewhere in the commons."
+        )
+
+        # Check for processed MUMTA data
+        _mumta_summary_path = ROOT / "data" / "processed" / "mumta" / "mumta_cohort_summary.csv"
+        _mumta_data_exists = _mumta_summary_path.exists()
+
+        if not _mumta_data_exists:
+            st.info(
+                "MUMTA data processing required. Run:\n\n"
+                "```\npython3 src/data/process_mumta.py\n```\n\n"
+                "This will process the raw cohort data and generate summary CSVs "
+                "in `data/processed/mumta/`."
+            )
+        elif not _MUMTA_VIZ_AVAILABLE:
+            _err_msg = globals().get("_MUMTA_IMPORT_ERROR", "unknown error")
+            st.warning(
+                "MUMTA visualization module failed to load. Ensure `src/viz/mumta.py` exists "
+                "and exports the required plotting functions."
+            )
+            st.code(_err_msg, language="text")
+        else:
+            # Load MUMTA processed data
+            _mumta_cohort = pd.read_csv(_mumta_summary_path)
+            _mumta_dir = ROOT / "data" / "processed" / "mumta"
+
+            # ── Section 1: Cohort Overview ───────────────────────────────────────
+            st.markdown("### Cohort Overview")
+            _m = cohort_overview_metrics(_mumta_cohort)
+            _ov1, _ov2, _ov3, _ov4 = st.columns(4)
+            _ov1.metric("Enrolled", f"{_m.get('n_enrolled', 0):,}")
+            _ov2.metric("Live births", f"{_m.get('n_live_births', 0):,}")
+            _ov3.metric("Stillbirths", f"{_m.get('n_stillbirths', 0):,}")
+            _ov4.metric("Miscarriages", f"{_m.get('n_miscarriages', 0):,}")
+
+            _ov5, _ov6, _ov7, _ov8 = st.columns(4)
+            _ov5.metric("LBW (<2500g)", f"{_m.get('lbw_pct', 0)}%")
+            _ov6.metric("Preterm (<37wk)", f"{_m.get('preterm_pct', 0)}%")
+            _ov7.metric("Mean birthweight", f"{_m.get('mean_birth_weight', 0):,.0f}g")
+            _ov8.metric("Stunted at birth", f"{_m.get('stunted_birth_pct', 0)}%")
+
+            _ov9, _ov10, _ov11, _ov12 = st.columns(4)
+            _ov9.metric("Anaemia 19wk", f"{_m.get('anaemia_19wk_pct', 0)}%")
+            _ov10.metric("Anaemia 32wk", f"{_m.get('anaemia_32wk_pct', 0)}%",
+                         delta=f"+{(_m.get('anaemia_32wk_pct',0) - _m.get('anaemia_19wk_pct',0)):.0f}pp",
+                         delta_color="inverse")
+            _ov11.metric("Iron def 19wk", f"{_m.get('iron_def_19wk_pct', 0)}%")
+            _ov12.metric("Iron def 32wk", f"{_m.get('iron_def_32wk_pct', 0)}%")
+
+            st.markdown("---")
+
+            # ── Section 2: Birth Outcomes by Treatment Arm ────────────────────────
+            st.markdown("### Birth Outcomes by Treatment Arm")
+            _fig_bo = birth_outcomes_by_arm(_mumta_cohort)
+            st.plotly_chart(_fig_bo, use_container_width=True)
+
+            st.markdown("---")
+
+            # ── Section 3: Birth Outcomes by Maternal Risk Factor ────────────────
+            st.markdown("### Birth Outcomes by Maternal Risk Factor")
+            st.markdown(
+                "How do birth outcomes differ by maternal nutritional status at enrollment? "
+                "Select a risk factor to stratify outcomes."
+            )
+
+            _rf_options = {
+                "Anaemia (Hb < 11 g/dL at 19 weeks)": "anaemia",
+                "BMI category (enrollment)": "bmi",
+                "MUAC status (< 23 cm = malnourished)": "muac",
+                "Iron deficiency (ferritin < 15 ng/mL at 19 weeks)": "iron_deficiency",
+            }
+            _rf_col1, _rf_col2 = st.columns([2, 1])
+            with _rf_col1:
+                _rf_label = st.selectbox(
+                    "Risk factor",
+                    list(_rf_options.keys()),
+                    index=0,
+                    key="mumta_rf_sel",
+                )
+            _rf_key = _rf_options[_rf_label]
+
+            # Grouped bar chart: outcome rates by stratum
+            _fig_rf = birth_outcomes_by_risk_factor(_mumta_cohort, risk_factor=_rf_key)
+            st.plotly_chart(_fig_rf, use_container_width=True)
+
+            # Birth weight distribution histogram
+            _fig_bw = birth_weight_distribution(_mumta_cohort, risk_factor=_rf_key)
+            st.plotly_chart(_fig_bw, use_container_width=True)
+
+            # Summary table across all risk factors
+            with st.expander("View summary table — all risk factors"):
+                _rf_table = adverse_outcome_summary(_mumta_cohort)
+                if not _rf_table.empty:
+                    st.dataframe(_rf_table, use_container_width=True, hide_index=True)
+                else:
+                    st.info("Insufficient data for summary table.")
+
+            st.markdown("---")
+
+            # ── Section 4: Maternal Iron & Anemia ────────────────────────────────
+            st.markdown("### Maternal Iron & Anemia Trajectory")
+            _anemia_path = _mumta_dir / "mumta_maternal_anemia.csv"
+            if _anemia_path.exists():
+                _anemia_df = pd.read_csv(_anemia_path)
+                _fig_anemia = maternal_anemia_trajectory(_anemia_df)
+                st.plotly_chart(_fig_anemia, use_container_width=True)
+            else:
+                st.info("Maternal anemia trajectory data not yet processed.")
+
+            st.markdown("---")
+
+            # ── Section 4: Infant Growth ─────────────────────────────────────────
+            st.markdown("### Infant Growth Curves")
+            _growth_path = _mumta_dir / "mumta_infant_growth.csv"
+            if _growth_path.exists():
+                _growth_df = pd.read_csv(_growth_path)
+                _growth_metric = st.selectbox(
+                    "Z-score metric",
+                    ["laz", "waz", "wlz"],
+                    format_func={"laz": "Length-for-age (LAZ)",
+                                 "waz": "Weight-for-age (WAZ)",
+                                 "wlz": "Weight-for-length (WLZ)"}.get,
+                    key="mumta_growth_metric",
+                )
+                _fig_growth = infant_growth_curves(_growth_df, metric=_growth_metric)
+                st.plotly_chart(_fig_growth, use_container_width=True)
+            else:
+                st.info("Infant growth data not yet processed.")
+
+            st.markdown("---")
+
+            # ── Section 5: B. infantis Deep Dive ────────────────────────────────
+            st.markdown("### B. infantis Colonization & Protective Effects")
+            st.markdown(
+                "*B. infantis* is a key commensal bacterium hypothesized to protect against "
+                "enteric pathogens and gut inflammation, potentially improving nutrient absorption "
+                "and infant growth. This section explores colonization patterns and associations "
+                "with pathogens, gut inflammation, and growth in the MUMTA substudy (~100–106 "
+                "infants with qPCR data per timepoint)."
+            )
+            _binfantis_path = _mumta_dir / "mumta_binfantis.csv"
+            if _binfantis_path.exists():
+                _binfantis_df = pd.read_csv(_binfantis_path)
+
+                _binf_view = st.radio(
+                    "B. infantis view",
+                    [
+                        "Colonization trajectory",
+                        "By treatment arm",
+                        "vs. Enteric pathogens",
+                        "vs. Gut inflammation",
+                        "vs. Infant growth",
+                    ],
+                    horizontal=True,
+                    key="mumta_binf_view",
+                )
+
+                if _binf_view == "Colonization trajectory":
+                    _fig_binf_traj = binfantis_colonization_corrected(_binfantis_df)
+                    st.plotly_chart(_fig_binf_traj, use_container_width=True)
+                    st.markdown(
+                        '<div class="context-box">'
+                        '<b>Key pattern:</b> Infant B. infantis colonization rises from 77% at 1–2 months '
+                        'to 92% at 5–6 months (among tested). Maternal colonization is much lower '
+                        '(2–26%), suggesting infant acquisition is primarily environmental/dietary '
+                        'rather than vertical transmission. Note: only ~100–106 participants per '
+                        'timepoint were tested in the qPCR substudy.'
+                        '</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                elif _binf_view == "By treatment arm":
+                    _fig_binf_arm = binfantis_by_arm(_binfantis_df)
+                    st.plotly_chart(_fig_binf_arm, use_container_width=True)
+                    st.markdown(
+                        '<div class="context-box">'
+                        '<b>Arm comparison:</b> Maamta (Arm B) shows the highest colonization (92–96%), '
+                        'while Maamta+Choline+Nicotinamide (Arm D) shows the lowest (61–86%). '
+                        'Small sample sizes per arm (~20–36) limit statistical power, but the '
+                        'pattern suggests the choline/nicotinamide combination may alter the gut '
+                        'environment in ways that affect B. infantis colonization.'
+                        '</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                elif _binf_view == "vs. Enteric pathogens":
+                    _tac_path = _mumta_dir / "mumta_tac_pathogens.csv"
+                    if _tac_path.exists():
+                        _tac_df_binf = pd.read_csv(_tac_path)
+                        _fig_binf_path = binfantis_vs_pathogens(_binfantis_df, _tac_df_binf)
+                        st.plotly_chart(_fig_binf_path, use_container_width=True)
+                        st.markdown(
+                            '<div class="context-box">'
+                            '<b>Mixed signal:</b> B. infantis+ infants show <i>lower</i> detection of '
+                            'EAEC and Shigella/EIEC (consistent with competitive exclusion), but '
+                            '<i>higher</i> detection of Campylobacter and Giardia. This may reflect '
+                            'confounding by shared environmental exposures rather than a causal effect '
+                            '— infants in environments with more diverse microbiome exposure may acquire '
+                            'both B. infantis and enteric pathogens. Sample sizes are small (n≈14 for '
+                            'B. infantis− group), limiting statistical interpretation.'
+                            '</div>',
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.info("TAC pathogen data not available.")
+
+                elif _binf_view == "vs. Gut inflammation":
+                    _inflam_path_binf = _mumta_dir / "mumta_gut_inflammation.csv"
+                    if _inflam_path_binf.exists():
+                        _inflam_df_binf = pd.read_csv(_inflam_path_binf)
+                        _fig_binf_inflam = binfantis_vs_inflammation(_binfantis_df, _inflam_df_binf)
+                        st.plotly_chart(_fig_binf_inflam, use_container_width=True)
+                        st.markdown(
+                            '<div class="context-box">'
+                            '<b>Counter-intuitive finding:</b> B. infantis+ infants show <i>higher</i> '
+                            'median MPO than B. infantis− infants. This likely reflects the small and '
+                            'imbalanced comparison group (n≈8–24 for B. infantis−) rather than a true '
+                            'harmful effect. MPO levels are extremely high across all infants in this '
+                            'cohort (median >1000 ng/mL), consistent with widespread environmental '
+                            'enteric dysfunction (EED) in this setting.'
+                            '</div>',
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.info("Gut inflammation data not available.")
+
+                else:  # vs. Infant growth
+                    _growth_path_binf = _mumta_dir / "mumta_infant_growth.csv"
+                    if _growth_path_binf.exists():
+                        _growth_df_binf = pd.read_csv(_growth_path_binf)
+                        _fig_binf_growth = binfantis_vs_growth(_binfantis_df, _growth_df_binf)
+                        st.plotly_chart(_fig_binf_growth, use_container_width=True)
+                        st.markdown(
+                            '<div class="context-box">'
+                            '<b>No clear protective signal:</b> B. infantis+ infants actually show '
+                            'slightly <i>lower</i> LAZ than B. infantis− infants at most timepoints, '
+                            'though the difference is within standard error bounds. The B. infantis− '
+                            'group is very small (n≈8–24), and these are observational comparisons '
+                            'subject to confounding. A protective effect of B. infantis may require '
+                            'higher colonization density (lower Ct) rather than simple presence/absence.'
+                            '</div>',
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.info("Infant growth data not available.")
+            else:
+                st.info("B. infantis data not yet processed. Run `python src/data/process_mumta.py --force`.")
+
+            st.markdown("---")
+
+            # ── Section 6: Enteric Pathogen Panel (TAC) ──────────────────────────
+            st.markdown("### Enteric Pathogen Panel (TaqMan Array Card)")
+            st.markdown(
+                "TAC data from a substudy (~200 participants) provides qPCR-based detection "
+                "of 37 enteric pathogens across maternal and infant stool specimens. "
+                "Ct < 35 = detected. These data reveal the scale of environmental enteric "
+                "pathogen exposure in this population."
+            )
+            _tac_path = _mumta_dir / "mumta_tac_pathogens.csv"
+            if _tac_path.exists():
+                _tac_df = pd.read_csv(_tac_path)
+
+                _tac_view = st.radio(
+                    "TAC view",
+                    ["Detection heatmap", "Top pathogens", "Pathogen burden trajectory"],
+                    horizontal=True,
+                    key="mumta_tac_view",
+                )
+
+                if _tac_view == "Detection heatmap":
+                    _tac_specimen = st.radio(
+                        "Specimen",
+                        ["maternal", "infant"],
+                        horizontal=True,
+                        key="mumta_tac_specimen",
+                    )
+                    _fig_tac_hm = pathogen_detection_heatmap(_tac_df, specimen_type=_tac_specimen)
+                    st.plotly_chart(_fig_tac_hm, use_container_width=True)
+
+                elif _tac_view == "Top pathogens":
+                    _fig_tac_top = top_pathogens_by_timepoint(_tac_df, n_top=10)
+                    st.plotly_chart(_fig_tac_top, use_container_width=True)
+
+                else:  # Pathogen burden trajectory
+                    _fig_tac_burden = pathogen_burden_trajectory(_tac_df)
+                    st.plotly_chart(_fig_tac_burden, use_container_width=True)
+
+                st.markdown(
+                    '<div class="context-box">'
+                    '<b>Key observation:</b> Maternal stool shows high baseline pathogen carriage '
+                    '(Giardia ~57%, EAEC ~58%, EPEC ~62% at 19 weeks). Infant pathogen acquisition '
+                    'accelerates after 3 months, with Giardia rising from 6% at 1-2 months to 43% '
+                    'by 12 months — consistent with the environmental enteric dysfunction (EED) '
+                    'pathway hypothesized to impair nutrient absorption and linear growth.'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.info("TAC pathogen data not yet processed. Run `python src/data/process_mumta.py --force`.")
+
+            st.markdown("---")
+
+            # ── Section 7: Gut Inflammation & Growth ─────────────────────────────
+            st.markdown("### Gut Inflammation & Infant Growth")
+            st.markdown(
+                "Linking fecal MPO (myeloperoxidase, a marker of gut inflammation / EED) "
+                "to concurrent infant length-for-age Z-scores (LAZ). Higher gut inflammation "
+                "is hypothesized to impair nutrient absorption and drive growth faltering."
+            )
+            _inflam_path = _mumta_dir / "mumta_gut_inflammation.csv"
+            _growth_path = _mumta_dir / "mumta_infant_growth.csv"
+            if _inflam_path.exists() and _growth_path.exists():
+                _inflam_df = pd.read_csv(_inflam_path)
+                _growth_df_gut = pd.read_csv(_growth_path)
+                _fig_mpo_growth = gut_inflammation_vs_growth(_inflam_df, _growth_df_gut)
+                st.plotly_chart(_fig_mpo_growth, use_container_width=True)
+
+                st.markdown(
+                    '<div class="context-box">'
+                    '<b>Relevance to product strategy:</b> If gut inflammation mediates growth '
+                    'faltering, then interventions targeting the maternal/infant gut (Azithromycin '
+                    'in Arm C, Choline+Nicotinamide in Arm D) may modify this pathway. The MPO–LAZ '
+                    'relationship across arms will indicate whether the interventions reduce gut '
+                    'inflammation and whether that translates to improved growth.'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.info("Gut inflammation or infant growth data not yet processed.")
+
+            st.markdown("---")
+
+            # ── Section 8: Model vs. Cohort Validation ───────────────────────────
+            st.markdown("### Model vs. Cohort Comparison")
+            st.markdown(
+                "How do the modelled country-level estimates (used in the Product Impact tab) "
+                "compare against observed cohort-level values from the MUMTA cohort?"
+            )
+            _pak_row = snap[snap["iso3"] == "PAK"]
+            if not _pak_row.empty:
+                _fig_validation = model_vs_cohort_comparison(_mumta_cohort, _pak_row.iloc[0])
+                st.plotly_chart(_fig_validation, use_container_width=True)
+            else:
+                st.info("Pakistan snapshot data not available for comparison.")
+
+        st.markdown("---")
+        st.markdown(
+            "_Source: MUMTA Prospective Birth Cohort, Matiari District, Sindh, Pakistan. "
+            "Data collection ongoing. Contact: Nutrition PST._"
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
