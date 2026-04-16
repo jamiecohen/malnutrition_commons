@@ -1,20 +1,35 @@
 # Malnutrition Data Commons
 
-A harmonized, queryable data landscape bringing together micronutrient deficiency burden, infectious disease prevalence, intervention coverage, and diet affordability data across priority geographies — enabling geographic targeting, burden characterization, and integrated analysis across the Foundation's nutrition investments.
+A harmonized, queryable data landscape bringing together micronutrient deficiency burden, infectious disease prevalence, intervention coverage, birth outcomes, and economic context data across 226 countries — enabling geographic targeting, burden characterization, and integrated analysis across the Foundation's nutrition investments.
 
-> **June 2026 Learning Session**: This repository contains the Sprint C preview — illustrating the architecture, sample data pulls, and visualizations that demonstrate what the full commons will look like when built out. The full build is a 3–6 month effort led by the LTE hire.
+> **June 2026 Learning Session**: This repository demonstrates the Sprint C preview — a working data pipeline, 33 harmonized indicators across 226 countries, and hypothesis-driven cross-indicator analysis illustrating the value of the integrated commons approach. The full production build is a 3–6 month effort led by the LTE hire.
 
 ---
 
-## Vision
+## What's Been Built
 
-The malnutrition commons is a cross-portfolio data backbone that answers questions no single dataset can answer alone:
+### Data pipeline
+Six source-specific pull scripts ingest and harmonize data from public APIs and bulk downloads into a common country–year format. Running `python src/data/pull_data.py` reproduces the full dataset from scratch.
 
-- Where do micronutrient deficiencies co-occur with high infectious disease burden?
-- What is the geographic overlap between populations targeted by LSFF programs and MNCNH/TB/malaria portfolios?
-- How does the integrated burden landscape shift under plausible intervention scenarios?
+### Harmonized datasets
+- **`data/processed/commons_snapshot.csv`** — 226 countries × 76 columns; one row per country using the most recent available value (2010–2023 window, with fallback to best available year)
+- **`data/processed/commons_panel.csv`** — 46,011 country–year rows × 44 columns (1960–2024)
+- **`data/processed/population.csv`** — World Bank population estimates for rate normalization
 
-By harmonizing data from GBD, DHS, WHO GHO, FAO, and UNICEF into a common geographic and temporal framework, the commons enables the kind of cross-cutting analysis that motivates integrated IDM investment.
+### Indicators (33 numeric, 7 domains)
+
+| Domain | Indicators |
+|--------|-----------|
+| **Nutritional status** | Anaemia in children <5, pregnant women, women 15–49; stunting, wasting, underweight |
+| **Micronutrient deficiencies** | Iron, vitamin A, zinc, iodine deficiency prevalence (GBD/OWID) |
+| **Infectious disease** | TB incidence, HIV prevalence, malaria incidence, measles reported cases |
+| **Birth outcomes** | Low birthweight, preterm birth rate, small for gestational age (SGA) |
+| **Healthcare coverage** | ANC4+, MCV1, MCV2, DTP3, PCV3, RotaC, ORS treatment |
+| **Mortality** | Under-5 mortality, neonatal mortality, maternal mortality ratio |
+| **Human capital & food systems** | HCI score, HCI learning years, GDP per capita PPP, severe food insecurity, moderate+severe food insecurity, LSFF wheat flour coverage |
+
+### Cross-indicator analysis
+11 hypotheses tested across the Integrated Nutrition Impact Framework causal chain, from upstream food systems drivers through nutritional status, disease burden, and downstream outcomes (mortality, human capital, economic productivity). See `docs/insights_summary.md` for full results.
 
 ---
 
@@ -23,17 +38,36 @@ By harmonizing data from GBD, DHS, WHO GHO, FAO, and UNICEF into a common geogra
 ```
 malnutrition_commons/
 ├── data/
-│   ├── raw/            # Downloaded source data (not committed — see sources.md)
-│   ├── processed/      # Harmonized, analysis-ready datasets
-│   └── sources.md      # Data source inventory and download instructions
+│   ├── raw/                    # Downloaded source data (gitignored for large files)
+│   │   ├── who_gho/            # WHO GHO OData API pulls
+│   │   ├── unicef/             # UNICEF/JME malnutrition CSVs
+│   │   ├── fao/                # FAO FAOSTAT API pulls
+│   │   ├── lsff/               # FFI 2023 wheat flour fortification
+│   │   ├── gbd/                # IHME GBD (OWID programmatic + manual download)
+│   │   └── outcomes/           # World Bank outcome indicators
+│   ├── processed/              # Harmonized, analysis-ready datasets
+│   └── sources.md              # Data source inventory and download instructions
 ├── docs/
-│   └── architecture.md # Full data commons architecture and indicator framework
+│   ├── architecture.md         # Full data commons architecture and indicator framework
+│   ├── gbd_download_guide.md   # Step-by-step GBD Results Tool export instructions
+│   └── insights_summary.md     # Summary of 11 cross-indicator hypotheses and findings
 ├── src/
-│   ├── data/           # Data download and processing scripts
-│   └── viz/            # Visualization utilities
+│   ├── data/
+│   │   ├── pull_data.py        # Master pull script (runs all sources)
+│   │   ├── pull_who_gho.py     # WHO GHO REST API
+│   │   ├── pull_unicef.py      # UNICEF/JME malnutrition
+│   │   ├── pull_fao.py         # FAO food security
+│   │   ├── pull_lsff.py        # LSFF/FFI fortification coverage
+│   │   ├── pull_gbd.py         # GBD micronutrient deficiencies (OWID + manual)
+│   │   ├── pull_outcomes.py    # World Bank outcomes and context
+│   │   └── harmonize.py        # Merges all sources into snapshot + panel
+│   └── viz/
+│       ├── figures.py          # Core chart functions (choropleth, scatter, bar, trend)
+│       └── insights.py         # Hypothesis-driven cross-indicator analysis (H1–H11)
 ├── dashboard/
-│   └── app.py          # Streamlit interactive dashboard
-├── notebooks/          # Exploratory analysis
+│   └── app.py                  # Streamlit interactive dashboard
+├── outputs/
+│   └── slides/insights/        # Saved hypothesis figures (HTML + PNG)
 └── requirements.txt
 ```
 
@@ -43,11 +77,12 @@ malnutrition_commons/
 
 | Source | Content | Access |
 |--------|---------|--------|
-| IHME GBD | Micronutrient deficiency burden (iron, zinc, vitamin A, iodine), wasting, stunting by country/year | Public API + bulk download |
-| WHO GHO | Anemia prevalence, undernutrition indicators, TB burden | Public REST API |
-| DHS Program | Household-level nutrition, infant feeding, anthropometry | Public data portal |
-| FAO | Food security, diet affordability (CoHD), food supply | Public API |
-| UNICEF | Child stunting, wasting, underweight | Data warehouse API |
+| **WHO GHO** | Anaemia, stunting, wasting, underweight, TB, HIV, malaria, birth outcomes, vaccination coverage, ORS treatment | Public REST API (`ghoapi.azureedge.net`) |
+| **UNICEF / JME** | Child stunting, wasting, underweight (JME harmonized estimates) | Public CSV download |
+| **FAO FAOSTAT** | Food insecurity prevalence, diet affordability | Public REST API |
+| **FFI / LSFF** | Wheat flour fortification coverage (2023) | Public spreadsheet |
+| **IHME GBD / OWID** | Iron, vitamin A, zinc, iodine deficiency; SGA prevalence | OWID programmatic + manual GBD download (see `docs/gbd_download_guide.md`) |
+| **World Bank** | Under-5/neonatal/maternal mortality, HCI, GDP per capita, food insecurity | Public REST API |
 
 ---
 
@@ -57,29 +92,56 @@ malnutrition_commons/
 # Install dependencies
 pip install -r requirements.txt
 
-# Pull illustrative datasets
+# Pull all data (skips existing files by default)
 python src/data/pull_data.py
 
-# Launch dashboard
+# Harmonize into analysis-ready datasets
+python src/data/harmonize.py
+
+# Run hypothesis analysis (saves figures to outputs/slides/insights/)
+python src/viz/insights.py
+
+# Launch interactive dashboard
 streamlit run dashboard/app.py
 ```
+
+> **Note**: Iron deficiency, iodine deficiency, and SGA prevalence require a manual download from the IHME GBD Results Tool. See `docs/gbd_download_guide.md` for step-by-step instructions. Vitamin A and zinc deficiency are pulled programmatically from OWID.
+
+---
+
+## Key Findings (Preview)
+
+Eleven cross-indicator hypotheses tested across 226 countries reveal strong empirical support for the Integrated Nutrition Impact Framework causal chain:
+
+- **Vaccination gaps → measles burden**: MCV1 coverage explains 27% of log-scale measles incidence variation; MCV1→MCV2 dropout amplifies risk further (r = 0.39***)
+- **ANC4 coverage → better birth outcomes**: Higher ANC4 predicts lower LBW (r = −0.47***) and preterm birth (r = −0.44***)
+- **Malaria amplifies anaemia beyond iron deficiency**: Malaria–anaemia correlation (r = 0.79***) persists after statistically controlling for iron deficiency — a strong signal for co-intervention
+- **HIV–TB syndemic**: HIV prevalence strongly predicts TB incidence (r = 0.50***), concentrated in Sub-Saharan Africa
+- **Nutrition × health system composite**: Countries with stronger health systems carry meaningfully lower nutrition burden (r = −0.29***)
+- **Pregnant anaemia → maternal mortality**: r = 0.75*** — one of the strongest single-indicator predictors of MMR
+- **Stunting → child mortality**: Stunting predicts U5MR with r = 0.81***; nutrition burden composite reaches r = 0.83***
+- **Nutrition burden → human capital**: Strongest relationship in the dataset: r = −0.85*** with HCI, r = −0.80*** with log(GDP per capita)
+- **Food insecurity → stunting → U5MR causal chain**: All three links confirmed (r ≥ 0.77***), supporting the upstream food systems framing
+
+See `docs/insights_summary.md` for full statistical detail, interpretation, and implications.
 
 ---
 
 ## Sprint C Scope (June 2026 Learning Session)
 
-Sprint C is a **preview** of the full commons — not a finished product. For June, we are showing:
+Sprint C is a **preview** of the full commons — demonstrating:
 
-1. **Architecture and data specification** — what we're building and why
-2. **Illustrative visualizations** — sample geographic overlays showing the value of the integrated approach (e.g., iron deficiency prevalence × TB burden × LSFF coverage for priority regions)
-3. **Resourcing plan** — LTE hire, 6–9 month build timeline, Fall 2026 strategic review targets
+1. **Working data pipeline** — 6 sources, 33 indicators, reproducible from scratch
+2. **Integrated cross-indicator analysis** — 11 hypotheses, empirical effect sizes
+3. **Interactive dashboard** — choropleth maps, scatter plots, burden rankings, time series
+4. **Architecture and resourcing plan** — what the full production build requires
 
-The full build will be LTE-led after the June session.
+The full production build (LTE-led, Fall 2026) will add DHS household microdata, near-real-time data refresh, and a formal query API layer.
 
 ---
 
 ## Context
 
-This work is part of a broader IDM strategy for the Foundation's nutrition portfolio, developed in coordination with the MNCNH and Nutrition PSTs. See `docs/architecture.md` for the full data commons design and indicator framework.
+Developed in coordination with the MNCNH and Nutrition PSTs as part of the IDM integrated data strategy. See `docs/architecture.md` for the full data commons design and indicator framework.
 
 **Contacts**: Jamie Cohen (IDM), Emma Bonglack (LTE, incoming)

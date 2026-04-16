@@ -1,0 +1,686 @@
+"""
+Visualization functions for the MUMTA Pakistan cohort data.
+
+MUMTA is a multi-arm RCT in Pakistan with arms:
+  A = Control, B = Maamta, C = Maamta + Azithromycin, D = Maamta + Choline + Nicotinamide
+
+All functions return Plotly go.Figure objects for use in the Streamlit dashboard.
+"""
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+# ── Palette / style ──────────────────────────────────────────────────────────
+
+FOUNDATION_BLUE = "#003366"
+ACCENT_ORANGE = "#E87722"
+BG_LIGHT = "#F8F9FA"
+FONT = dict(family="Arial, sans-serif", color="#1A1A2E")
+
+ARM_COLORS = {
+    "A": "#888888",  # Control — grey
+    "B": "#E87722",  # Maamta — orange
+    "C": "#2A9D8F",  # Maamta + Azithromycin — teal
+    "D": "#7C3AED",  # Maamta + Choline + Nicotinamide — purple
+}
+
+ARM_LABELS = {
+    "A": "Control",
+    "B": "Maamta",
+    "C": "Maamta + Azithro",
+    "D": "Maamta + Choline + Nic",
+}
+
+ARM_ORDER = ["A", "B", "C", "D"]
+
+# Timepoint ordering for longitudinal charts
+TIMEPOINT_ORDER = ["19wk", "32wk", "1-2mo", "3-4mo", "5-6mo", "12mo"]
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _empty_figure(msg="No data available", height=300):
+    """Return a blank figure with a centred annotation."""
+    fig = go.Figure()
+    fig.add_annotation(
+        text=msg, xref="paper", yref="paper", x=0.5, y=0.5,
+        showarrow=False, font=dict(size=16, color="#999"),
+    )
+    fig.update_layout(
+        height=height,
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        font=FONT,
+    )
+    return fig
+
+
+def _is_empty(df):
+    """Check if a DataFrame is None or empty."""
+    return df is None or (isinstance(df, pd.DataFrame) and df.empty)
+
+
+def _hex_to_rgba(hex_color: str, alpha: float = 1.0) -> str:
+    """Convert a hex color like '#888888' to 'rgba(136,136,136,0.12)'."""
+    h = hex_color.lstrip("#")
+    if len(h) == 6:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    elif len(h) == 3:
+        r, g, b = int(h[0]*2, 16), int(h[1]*2, 16), int(h[2]*2, 16)
+    else:
+        return f"rgba(128,128,128,{alpha})"
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def _binomial_ci(k, n, z=1.96):
+    """Wilson score 95 % CI for a binomial proportion, returns (lo, hi) as %."""
+    if n == 0:
+        return (0.0, 0.0)
+    p = k / n
+    denom = 1 + z ** 2 / n
+    centre = (p + z ** 2 / (2 * n)) / denom
+    margin = (z / denom) * np.sqrt(p * (1 - p) / n + z ** 2 / (4 * n ** 2))
+    lo = max(0.0, centre - margin) * 100
+    hi = min(1.0, centre + margin) * 100
+    return (lo, hi)
+
+
+def _base_layout(height=350, **kwargs):
+    """Common layout options."""
+    layout = dict(
+        height=height,
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        font=FONT,
+        margin=dict(l=60, r=30, t=50, b=50),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0,
+            font=dict(size=11),
+        ),
+    )
+    layout.update(kwargs)
+    return layout
+
+
+# ── 1. Cohort overview metrics ──────────────────────────────────────────────
+
+def cohort_overview_metrics(cohort_df):
+    """Return a dict of summary statistics for display as st.metric cards.
+
+    Keys returned:
+        n_enrolled, n_live_births, n_stillbirths, n_miscarriages,
+        lbw_pct, preterm_pct, stunted_birth_pct,
+        mean_birth_weight, mean_gestational_age,
+        anaemia_19wk_pct, anaemia_32wk_pct,
+        iron_def_19wk_pct, iron_def_32wk_pct
+    """
+    if _is_empty(cohort_df):
+        return {}
+
+    df = cohort_df.copy()
+    n = len(df)
+    if "birth_outcome" in df.columns:
+        _bo = df["birth_outcome"].dropna().str.lower()
+        live = int(_bo.str.contains("live", na=False).sum())
+        still = int(_bo.str.contains("still", na=False).sum())
+        miscarriage = int(_bo.str.contains("miscarriage", na=False).sum())
+    else:
+        live = still = miscarriage = 0
+
+    def _pct(col):
+        valid = df[col].dropna() if col in df.columns else pd.Series(dtype=float)
+        if valid.empty:
+            return None
+        return round(valid.mean() * 100, 1)
+
+    def _mean(col, decimals=1):
+        valid = df[col].dropna() if col in df.columns else pd.Series(dtype=float)
+        if valid.empty:
+            return None
+        return round(valid.mean(), decimals)
+
+    return dict(
+        n_enrolled=n,
+        n_live_births=int(live),
+        n_stillbirths=int(still),
+        n_miscarriages=int(miscarriage),
+        lbw_pct=_pct("lbw"),
+        preterm_pct=_pct("preterm"),
+        stunted_birth_pct=_pct("stunted_at_birth"),
+        mean_birth_weight=_mean("birth_weight_g", 0),
+        mean_gestational_age=_mean("gestational_age_weeks", 1),
+        anaemia_19wk_pct=_pct("anaemic_19wk"),
+        anaemia_32wk_pct=_pct("anaemic_32wk"),
+        iron_def_19wk_pct=_pct("iron_deficient_19wk"),
+        iron_def_32wk_pct=_pct("iron_deficient_32wk"),
+    )
+
+
+# ── 2. Birth outcomes by arm ────────────────────────────────────────────────
+
+def birth_outcomes_by_arm(cohort_df, height=350):
+    """Grouped bar chart: LBW %, preterm %, stunted at birth % by arm with 95 % CI."""
+    if _is_empty(cohort_df):
+        return _empty_figure(height=height)
+
+    outcomes = [
+        ("lbw", "Low birthweight"),
+        ("preterm", "Preterm"),
+        ("stunted_at_birth", "Stunted at birth"),
+    ]
+
+    fig = go.Figure()
+    for arm in ARM_ORDER:
+        arm_df = cohort_df[cohort_df["arm"] == arm]
+        if arm_df.empty:
+            continue
+        n_arm = len(arm_df)
+        pcts, lo_errs, hi_errs, x_labels = [], [], [], []
+        for col, label in outcomes:
+            if col not in arm_df.columns:
+                pcts.append(0)
+                lo_errs.append(0)
+                hi_errs.append(0)
+                x_labels.append(label)
+                continue
+            k = int(arm_df[col].sum())
+            p = k / n_arm * 100
+            ci_lo, ci_hi = _binomial_ci(k, n_arm)
+            pcts.append(round(p, 1))
+            lo_errs.append(round(p - ci_lo, 1))
+            hi_errs.append(round(ci_hi - p, 1))
+            x_labels.append(label)
+
+        fig.add_trace(go.Bar(
+            name=ARM_LABELS.get(arm, arm),
+            x=x_labels,
+            y=pcts,
+            error_y=dict(type="data", symmetric=False, array=hi_errs, arrayminus=lo_errs),
+            marker_color=ARM_COLORS.get(arm, "#333"),
+            hovertemplate="%{x}: %{y:.1f}% (n=" + str(n_arm) + ")<extra>" + ARM_LABELS.get(arm, arm) + "</extra>",
+        ))
+
+    fig.update_layout(
+        **_base_layout(height=height),
+        barmode="group",
+        title=dict(text="Birth Outcomes by Trial Arm", font=dict(size=15, color=FOUNDATION_BLUE)),
+        yaxis=dict(title="Prevalence (%)", gridcolor="#eee"),
+        xaxis=dict(title=""),
+    )
+    return fig
+
+
+# ── 3. Maternal anaemia trajectory ──────────────────────────────────────────
+
+def maternal_anemia_trajectory(anemia_df, height=320):
+    """Two-row subplot: top = Hb trajectory (19wk→32wk), bottom = iron deficiency %."""
+    if _is_empty(anemia_df):
+        return _empty_figure(height=height)
+
+    fig = make_subplots(
+        rows=2, cols=1,
+        shared_xaxes=True,
+        row_heights=[0.6, 0.4],
+        vertical_spacing=0.15,
+        subplot_titles=["Haemoglobin (g/dL)", "Iron deficiency (%)"],
+    )
+
+    timepoints = ["19wk", "32wk"]
+    tp_x = {tp: i for i, tp in enumerate(timepoints)}
+
+    for arm in ARM_ORDER:
+        arm_df = anemia_df[anemia_df["arm"] == arm]
+        if arm_df.empty:
+            continue
+        color = ARM_COLORS.get(arm, "#333")
+        label = ARM_LABELS.get(arm, arm)
+
+        # ── Top panel: Hb trajectory ──
+        hb_means, hb_ses, xs = [], [], []
+        for tp in timepoints:
+            tp_df = arm_df[arm_df["timepoint"] == tp]
+            hb = tp_df["hemoglobin"].dropna()
+            if hb.empty:
+                continue
+            hb_means.append(hb.mean())
+            hb_ses.append(hb.std() / np.sqrt(len(hb)))
+            xs.append(tp)
+
+        if hb_means:
+            fig.add_trace(go.Scatter(
+                x=xs, y=hb_means, mode="lines+markers",
+                name=label,
+                line=dict(color=color, width=2),
+                marker=dict(size=8, color=color),
+                error_y=dict(type="data", array=hb_ses, visible=True),
+                hovertemplate="Hb: %{y:.1f} ± %{error_y.array:.2f} g/dL<extra>" + label + "</extra>",
+                legendgroup=arm,
+            ), row=1, col=1)
+
+        # ── Bottom panel: Iron deficiency % ──
+        id_pcts, id_xs = [], []
+        for tp in timepoints:
+            tp_df = arm_df[arm_df["timepoint"] == tp]
+            iron = tp_df["iron_deficient"].dropna()
+            if iron.empty:
+                continue
+            id_pcts.append(iron.mean() * 100)
+            id_xs.append(tp)
+
+        if id_pcts:
+            fig.add_trace(go.Scatter(
+                x=id_xs, y=id_pcts, mode="lines+markers",
+                line=dict(color=color, width=2, dash="dot"),
+                marker=dict(size=8, color=color, symbol="square"),
+                hovertemplate="Iron def: %{y:.1f}%<extra>" + label + "</extra>",
+                legendgroup=arm,
+                showlegend=False,
+            ), row=2, col=1)
+
+    # Anaemia threshold line on top panel
+    fig.add_hline(y=11, line_dash="dash", line_color="#CC3333", line_width=1, row=1, col=1,
+                  annotation_text="Anaemia threshold (11 g/dL)", annotation_position="top left",
+                  annotation_font_size=10, annotation_font_color="#CC3333")
+
+    fig.update_layout(
+        **_base_layout(height=height),
+        title=dict(text="Maternal Anaemia Trajectory", font=dict(size=15, color=FOUNDATION_BLUE)),
+    )
+    fig.update_yaxes(title_text="Hb (g/dL)", gridcolor="#eee", row=1, col=1)
+    fig.update_yaxes(title_text="%", gridcolor="#eee", row=2, col=1)
+
+    return fig
+
+
+# ── 4. Infant growth curves ─────────────────────────────────────────────────
+
+def infant_growth_curves(growth_df, metric="laz", height=350):
+    """Line chart: mean z-score by month (0–8) per arm with shaded ±1 SE band."""
+    if _is_empty(growth_df):
+        return _empty_figure(height=height)
+
+    metric_labels = {
+        "laz": ("Length-for-age z-score (LAZ)", "Stunting"),
+        "waz": ("Weight-for-age z-score (WAZ)", "Underweight"),
+        "wlz": ("Weight-for-length z-score (WLZ)", "Wasting"),
+    }
+    y_label, threshold_label = metric_labels.get(metric, (metric.upper(), "Threshold"))
+
+    fig = go.Figure()
+    months = sorted(growth_df["month"].dropna().unique())
+
+    for arm in ARM_ORDER:
+        arm_df = growth_df[growth_df["arm"] == arm]
+        if arm_df.empty:
+            continue
+        color = ARM_COLORS.get(arm, "#333")
+        label = ARM_LABELS.get(arm, arm)
+
+        means, ses, valid_months = [], [], []
+        for m in months:
+            vals = arm_df.loc[arm_df["month"] == m, metric].dropna()
+            if vals.empty:
+                continue
+            means.append(vals.mean())
+            ses.append(vals.std() / np.sqrt(len(vals)))
+            valid_months.append(m)
+
+        if not means:
+            continue
+
+        means = np.array(means)
+        ses = np.array(ses)
+        upper = means + ses
+        lower = means - ses
+
+        # Shaded SE band
+        fig.add_trace(go.Scatter(
+            x=list(valid_months) + list(reversed(valid_months)),
+            y=list(upper) + list(reversed(lower)),
+            fill="toself",
+            fillcolor=_hex_to_rgba(color, 0.12),
+            line=dict(width=0),
+            showlegend=False,
+            hoverinfo="skip",
+            legendgroup=arm,
+        ))
+
+        # Mean line
+        fig.add_trace(go.Scatter(
+            x=valid_months, y=means, mode="lines+markers",
+            name=label,
+            line=dict(color=color, width=2),
+            marker=dict(size=6, color=color),
+            hovertemplate="Month %{x}: %{y:.2f}<extra>" + label + "</extra>",
+            legendgroup=arm,
+        ))
+
+    # Threshold line at -2
+    fig.add_hline(
+        y=-2, line_dash="dash", line_color="#CC3333", line_width=1,
+        annotation_text=f"{threshold_label} threshold (z = −2)",
+        annotation_position="bottom left",
+        annotation_font_size=10, annotation_font_color="#CC3333",
+    )
+
+    fig.update_layout(
+        **_base_layout(height=height),
+        title=dict(text=f"Infant Growth: {y_label}", font=dict(size=15, color=FOUNDATION_BLUE)),
+        xaxis=dict(title="Age (months)", dtick=1, gridcolor="#eee"),
+        yaxis=dict(title="Z-score", gridcolor="#eee"),
+    )
+    return fig
+
+
+# ── 5. B. infantis colonization ─────────────────────────────────────────────
+
+def binfantis_colonization(binfantis_df, height=320):
+    """B. infantis positivity rate over timepoints — two subplot rows: maternal / infant stool."""
+    if _is_empty(binfantis_df):
+        return _empty_figure(height=height)
+
+    fig = make_subplots(
+        rows=2, cols=1,
+        shared_xaxes=True,
+        row_heights=[0.5, 0.5],
+        vertical_spacing=0.15,
+        subplot_titles=["Maternal stool", "Infant stool"],
+    )
+
+    specimen_types = ["maternal", "infant"]
+    # Filter to known timepoints and sort
+    all_tps = [tp for tp in TIMEPOINT_ORDER if tp in binfantis_df["timepoint"].unique()]
+
+    for row_idx, specimen in enumerate(specimen_types, start=1):
+        spec_df = binfantis_df[binfantis_df["specimen_type"] == specimen]
+        for arm in ARM_ORDER:
+            arm_df = spec_df[spec_df["arm"] == arm]
+            if arm_df.empty:
+                continue
+            color = ARM_COLORS.get(arm, "#333")
+            label = ARM_LABELS.get(arm, arm)
+
+            tps, rates = [], []
+            for tp in all_tps:
+                tp_df = arm_df[arm_df["timepoint"] == tp]
+                pos_col = "b_infantis_positive"
+                if pos_col not in tp_df.columns or tp_df[pos_col].dropna().empty:
+                    continue
+                vals = tp_df[pos_col].dropna()
+                tps.append(tp)
+                rates.append(vals.mean() * 100)
+
+            if not tps:
+                continue
+
+            fig.add_trace(go.Scatter(
+                x=tps, y=rates, mode="lines+markers",
+                name=label,
+                line=dict(color=color, width=2),
+                marker=dict(size=7, color=color),
+                hovertemplate="%{x}: %{y:.1f}%<extra>" + label + "</extra>",
+                legendgroup=arm,
+                showlegend=(row_idx == 1),
+            ), row=row_idx, col=1)
+
+    fig.update_layout(
+        **_base_layout(height=height),
+        title=dict(text="B. infantis Colonization", font=dict(size=15, color=FOUNDATION_BLUE)),
+    )
+    fig.update_yaxes(title_text="Positivity (%)", gridcolor="#eee", row=1, col=1)
+    fig.update_yaxes(title_text="Positivity (%)", gridcolor="#eee", row=2, col=1)
+    return fig
+
+
+# ── 6. Gut inflammation trajectory ──────────────────────────────────────────
+
+def gut_inflammation_trajectory(inflammation_df, marker="mpo", height=320):
+    """Median MPO or LCN-2 over timepoints by arm — two rows: maternal / infant."""
+    if _is_empty(inflammation_df):
+        return _empty_figure(height=height)
+
+    marker_col = marker.lower()
+    if marker_col not in inflammation_df.columns:
+        return _empty_figure(msg=f"Column '{marker_col}' not found", height=height)
+
+    marker_label = {"mpo": "MPO (ng/mL)", "lcn2": "LCN-2 (ng/mL)"}.get(marker_col, marker_col)
+
+    fig = make_subplots(
+        rows=2, cols=1,
+        shared_xaxes=True,
+        row_heights=[0.5, 0.5],
+        vertical_spacing=0.15,
+        subplot_titles=["Maternal stool", "Infant stool"],
+    )
+
+    specimen_types = ["maternal", "infant"]
+    all_tps = [tp for tp in TIMEPOINT_ORDER if tp in inflammation_df["timepoint"].unique()]
+
+    for row_idx, specimen in enumerate(specimen_types, start=1):
+        spec_df = inflammation_df[inflammation_df["specimen_type"] == specimen]
+        for arm in ARM_ORDER:
+            arm_df = spec_df[spec_df["arm"] == arm]
+            if arm_df.empty:
+                continue
+            color = ARM_COLORS.get(arm, "#333")
+            label = ARM_LABELS.get(arm, arm)
+
+            tps, medians, ns = [], [], []
+            for tp in all_tps:
+                vals = arm_df.loc[arm_df["timepoint"] == tp, marker_col].dropna()
+                if vals.empty:
+                    continue
+                tps.append(tp)
+                medians.append(vals.median())
+                ns.append(len(vals))
+
+            if not tps:
+                continue
+
+            hover_text = [f"{tp}: median={m:.1f}, n={n}" for tp, m, n in zip(tps, medians, ns)]
+            fig.add_trace(go.Scatter(
+                x=tps, y=medians, mode="lines+markers",
+                name=label,
+                line=dict(color=color, width=2),
+                marker=dict(size=7, color=color),
+                text=hover_text,
+                hovertemplate="%{text}<extra>" + label + "</extra>",
+                legendgroup=arm,
+                showlegend=(row_idx == 1),
+            ), row=row_idx, col=1)
+
+    fig.update_layout(
+        **_base_layout(height=height),
+        title=dict(text=f"Gut Inflammation: {marker_label}", font=dict(size=15, color=FOUNDATION_BLUE)),
+    )
+    fig.update_yaxes(title_text=marker_label, gridcolor="#eee", row=1, col=1)
+    fig.update_yaxes(title_text=marker_label, gridcolor="#eee", row=2, col=1)
+    return fig
+
+
+# ── 7. Microbiome composition ───────────────────────────────────────────────
+
+def microbiome_composition(microbiome_df, height=400):
+    """Stacked bar: top 15 genera by mean relative abundance, per timepoint, optionally by arm."""
+    if _is_empty(microbiome_df):
+        return _empty_figure(height=height)
+
+    df = microbiome_df.copy()
+
+    # Identify genus columns (everything that isn't metadata)
+    meta_cols = {"sample_id", "study_id", "timepoint", "arm"}
+    genus_cols = [c for c in df.columns if c not in meta_cols]
+    if not genus_cols:
+        return _empty_figure(msg="No genus columns found", height=height)
+
+    # Determine top 15 genera by overall mean abundance
+    genus_means = df[genus_cols].mean().sort_values(ascending=False)
+    top15 = genus_means.head(15).index.tolist()
+    other_cols = [c for c in genus_cols if c not in top15]
+
+    # Build a colour palette for genera
+    genus_palette = [
+        "#264653", "#2A9D8F", "#E9C46A", "#F4A261", "#E76F51",
+        "#003366", "#E87722", "#7C3AED", "#1D3557", "#457B9D",
+        "#A8DADC", "#F1FAEE", "#606C38", "#DDA15E", "#BC6C25",
+        "#AAAAAA",  # "Other"
+    ]
+
+    timepoints = [tp for tp in ["19wk", "32wk"] if tp in df["timepoint"].unique()]
+    arms_present = [a for a in ARM_ORDER if a in df["arm"].unique()]
+
+    # Build x-axis categories: arm × timepoint
+    x_labels = []
+    for arm in arms_present:
+        for tp in timepoints:
+            x_labels.append(f"{ARM_LABELS.get(arm, arm)}<br>{tp}")
+
+    fig = go.Figure()
+    for i, genus in enumerate(top15):
+        y_vals = []
+        for arm in arms_present:
+            for tp in timepoints:
+                subset = df[(df["arm"] == arm) & (df["timepoint"] == tp)]
+                if subset.empty or genus not in subset.columns:
+                    y_vals.append(0)
+                else:
+                    y_vals.append(subset[genus].mean())
+        fig.add_trace(go.Bar(
+            name=genus,
+            x=x_labels,
+            y=y_vals,
+            marker_color=genus_palette[i % len(genus_palette)],
+            hovertemplate=genus + ": %{y:.1f}%<extra></extra>",
+        ))
+
+    # "Other" category
+    if other_cols:
+        y_vals = []
+        for arm in arms_present:
+            for tp in timepoints:
+                subset = df[(df["arm"] == arm) & (df["timepoint"] == tp)]
+                if subset.empty:
+                    y_vals.append(0)
+                else:
+                    y_vals.append(subset[other_cols].sum(axis=1).mean())
+        fig.add_trace(go.Bar(
+            name="Other",
+            x=x_labels,
+            y=y_vals,
+            marker_color=genus_palette[-1],
+            hovertemplate="Other: %{y:.1f}%<extra></extra>",
+        ))
+
+    fig.update_layout(
+        **_base_layout(height=height),
+        barmode="stack",
+        title=dict(text="Gut Microbiome Composition (Top 15 Genera)", font=dict(size=15, color=FOUNDATION_BLUE)),
+        yaxis=dict(title="Relative abundance (%)", gridcolor="#eee"),
+        xaxis=dict(title="", tickangle=-30),
+        legend=dict(font=dict(size=9), orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
+    )
+    return fig
+
+
+# ── 8. Model vs cohort comparison ───────────────────────────────────────────
+
+def model_vs_cohort_comparison(cohort_df, snapshot_row, height=300):
+    """Side-by-side horizontal bars: MUMTA cohort ground-truth vs commons modelled estimates."""
+    if _is_empty(cohort_df) or snapshot_row is None:
+        return _empty_figure(height=height)
+
+    # If snapshot_row is a DataFrame, take the first row
+    if isinstance(snapshot_row, pd.DataFrame):
+        if snapshot_row.empty:
+            return _empty_figure(height=height)
+        snapshot_row = snapshot_row.iloc[0]
+
+    # ── Compute cohort values ──
+    def _cohort_pct(col):
+        if col not in cohort_df.columns:
+            return None
+        vals = cohort_df[col].dropna()
+        return round(vals.mean() * 100, 1) if not vals.empty else None
+
+    indicators = []
+    cohort_vals = []
+    model_vals = []
+
+    # LBW
+    c_lbw = _cohort_pct("lbw")
+    m_lbw = snapshot_row.get("low_birthweight_pct")
+    if c_lbw is not None and m_lbw is not None:
+        indicators.append("Low birthweight (%)")
+        cohort_vals.append(c_lbw)
+        model_vals.append(float(m_lbw))
+
+    # Anaemia in pregnancy (32wk)
+    c_ana = _cohort_pct("anaemic_32wk")
+    m_ana = snapshot_row.get("anaemia_pregnant_women_pct")
+    if c_ana is not None and m_ana is not None:
+        indicators.append("Anaemia in pregnancy (%)")
+        cohort_vals.append(c_ana)
+        model_vals.append(float(m_ana))
+
+    # Iron deficiency (32wk)
+    c_iron = _cohort_pct("iron_deficient_32wk")
+    m_iron = snapshot_row.get("iron_deficiency_pct")
+    if c_iron is not None and m_iron is not None:
+        indicators.append("Iron deficiency (%)")
+        cohort_vals.append(c_iron)
+        model_vals.append(float(m_iron))
+
+    # Stunting at birth vs <5 stunting
+    c_stunt = _cohort_pct("stunted_at_birth")
+    m_stunt = snapshot_row.get("stunting_pct_who")
+    if c_stunt is not None and m_stunt is not None:
+        indicators.append("Stunting (%)*")
+        cohort_vals.append(c_stunt)
+        model_vals.append(float(m_stunt))
+
+    if not indicators:
+        return _empty_figure(msg="No matching indicators to compare", height=height)
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        name="MUMTA cohort",
+        y=indicators,
+        x=cohort_vals,
+        orientation="h",
+        marker_color=ACCENT_ORANGE,
+        hovertemplate="%{y}: %{x:.1f}%<extra>MUMTA cohort</extra>",
+    ))
+    fig.add_trace(go.Bar(
+        name="Modelled estimate (GBD/WHO)",
+        y=indicators,
+        x=model_vals,
+        orientation="h",
+        marker_color=FOUNDATION_BLUE,
+        hovertemplate="%{y}: %{x:.1f}%<extra>Modelled estimate</extra>",
+    ))
+
+    fig.update_layout(
+        **_base_layout(height=height),
+        barmode="group",
+        title=dict(text="MUMTA Cohort vs Modelled Estimates (Pakistan)", font=dict(size=15, color=FOUNDATION_BLUE)),
+        xaxis=dict(title="Prevalence (%)", gridcolor="#eee"),
+        yaxis=dict(title=""),
+    )
+
+    # Add footnote for stunting comparison caveat
+    if "Stunting (%)*" in indicators:
+        fig.add_annotation(
+            text="*Cohort = stunted at birth; modelled = stunting in children <5",
+            xref="paper", yref="paper", x=0, y=-0.15,
+            showarrow=False, font=dict(size=9, color="#888"),
+        )
+
+    return fig

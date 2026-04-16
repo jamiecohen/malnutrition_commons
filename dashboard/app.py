@@ -77,6 +77,21 @@ from src.viz.subnational import (
     INDICATOR_CONFIG as NGA_INDICATOR_CONFIG,
 )
 
+# ── Optional MUMTA import ───────────────────────────────────────────────────
+try:
+    from src.viz.mumta import (
+        cohort_overview_metrics,
+        birth_outcomes_by_arm,
+        maternal_anemia_trajectory,
+        infant_growth_curves,
+        binfantis_colonization,
+        model_vs_cohort_comparison,
+        ARM_LABELS as MUMTA_ARM_LABELS,
+    )
+    _MUMTA_VIZ_AVAILABLE = True
+except ImportError:
+    _MUMTA_VIZ_AVAILABLE = False
+
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Malnutrition Data Commons",
@@ -189,6 +204,30 @@ st.markdown("""
 
     /* ── Horizontal rule ── */
     hr { border-color: #DDE3EA; }
+
+    /* ── Source badge ── */
+    .source-badge {
+        display: inline-block;
+        background: #F0F4F8;
+        border: 1px solid #C8D6E5;
+        border-radius: 4px;
+        padding: 1px 7px;
+        font-size: 0.72rem;
+        color: #555E6E;
+        font-weight: 600;
+        margin-left: 6px;
+        vertical-align: middle;
+    }
+    .source-badge.ground-truth {
+        background: #E8F5E9;
+        border-color: #81C784;
+        color: #2E7D32;
+    }
+    .source-badge.modelled {
+        background: #FFF3E0;
+        border-color: #FFB74D;
+        color: #E65100;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -252,6 +291,9 @@ PRIORITY_COUNTRIES = {
 # The six Foundation priority countries used across all analyses
 PRIORITY_ISO3 = ["IND", "PAK", "BGD", "NGA", "ETH", "COD"]
 
+# The three deep-dive priority countries for Tab 2
+DEEP_DIVE_COUNTRIES = {"Pakistan": "PAK", "India": "IND", "Nigeria": "NGA"}
+
 
 # ── Country profile helpers ───────────────────────────────────────────────────
 
@@ -296,7 +338,7 @@ PROFILE_KEY_METRICS = [
 def compute_domain_scores(df: pd.DataFrame) -> pd.DataFrame:
     """For every country, compute a 0-100 burden score per domain (100 = worst globally).
 
-    Each indicator is converted to a percentile rank (0–100).
+    Each indicator is converted to a percentile rank (0-100).
     For 'higher is bad' indicators the rank is used directly.
     For 'higher is good' indicators (coverage, HCI) the rank is inverted.
     Domain score = mean of available indicator ranks within the domain.
@@ -458,6 +500,7 @@ with st.sidebar:
 - **World Bank** — mortality, HCI, GDP, food insecurity
 - **FAO** — food security
 - **FFI / LSFF** — fortification coverage
+- **MUMTA** — cohort data (Pakistan)
     """)
     st.markdown("---")
     st.markdown(
@@ -514,678 +557,547 @@ with col6:
 st.markdown("---")
 
 
-# ── Tab layout ────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-    "🗺️ Geographic Map",
-    "🔗 Co-Occurrence",
-    "📊 Country Rankings",
-    "📈 Trends",
-    "🎯 Burden Profile",
-    "🔬 Insights",
-    "🌐 Country Profile",
-    "💡 Scenario Planner",
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Tab layout (restructured for priority-geography narrative) ────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "🏗️ Architecture & Sources",
+    "🎯 Priority Geographies",
+    "🇵🇰 Deep Dive: Pakistan",
+    "🧪 Product Impact",
+    "🇳🇬 Nigeria Subnational",
+    "🌍 Global Context",
 ])
 
 
-# ── Tab 1: Choropleth map ─────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Tab 1: Architecture & Sources ─────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
 with tab1:
-    col_left, col_right = st.columns([3, 1])
-    with col_right:
-        map_indicator = st.selectbox(
-            "Indicator",
-            list(INDICATOR_OPTIONS.keys()),
-            index=0,
-            key="map_ind",
+    st.markdown("## Malnutrition Data Commons — Architecture Preview")
+    st.markdown(
+        "The Malnutrition Data Commons harmonizes publicly available nutrition, "
+        "infectious disease, and intervention coverage data from multiple global "
+        "sources into a single queryable layer. This enables cross-portfolio "
+        "analysis that no single data source can support alone."
+    )
+
+    st.markdown("---")
+
+    # ── Data sources ─────────────────────────────────────────────────────────
+    st.markdown("### Data Sources")
+    _src_col1, _src_col2 = st.columns(2)
+    with _src_col1:
+        st.markdown("""
+**Global modelled estimates**
+- **WHO GHO** — Anaemia prevalence, TB incidence, vaccination coverage, birth outcomes
+- **IHME GBD** — Iron, vitamin A, zinc, iodine deficiency; disease burden estimates
+- **UNICEF / JME** — Stunting, wasting, underweight (joint WHO/UNICEF/World Bank estimates)
+        """)
+    with _src_col2:
+        st.markdown("""
+**Contextual & intervention data**
+- **World Bank** — Mortality rates, Human Capital Index, GDP, food insecurity
+- **FAO FAOSTAT** — Food supply adequacy, undernourishment prevalence
+- **FFI / LSFF** — Wheat flour fortification legislation and coverage proxy
+        """)
+
+    st.markdown("""
+**Cohort & survey data**
+- **DHS Program** — Subnational survey microdata (Nigeria NDHS 2018)
+- **MUMTA Cohort** — Prospective birth cohort in Matiari, Pakistan (maternal nutrition,
+  birth outcomes, infant growth, microbiome) — see **Deep Dive: Pakistan** tab
+    """)
+
+    st.markdown("---")
+
+    # ── Architecture diagram (text-based) ────────────────────────────────────
+    st.markdown("### Architecture")
+    st.markdown(
+        '<div class="context-box">'
+        '<b>Data flow:</b> Raw sources (APIs + CSV exports) '
+        '→ <code>src/data/</code> pull scripts (idempotent) '
+        '→ <code>data/processed/</code> harmonized CSVs (ISO3 + year indexed) '
+        '→ Indicator framework (33 indicators, 7 domains) '
+        '→ Query layer (this dashboard + static exports for slides)'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("---")
+
+    # ── Priority geographies ─────────────────────────────────────────────────
+    st.markdown("### Priority Geographies")
+    st.markdown(
+        "The commons is built around three deep-dive countries aligned with "
+        "Foundation portfolio priorities. These are where we have the richest "
+        "data overlap and the most direct programme relevance."
+    )
+
+    _geo_col1, _geo_col2, _geo_col3 = st.columns(3)
+    with _geo_col1:
+        st.markdown(
+            "**🇵🇰 Pakistan**  \n"
+            "MUMTA cohort site (Matiari). MNCNH alignment. "
+            "Cohort-level ground truth for maternal nutrition, "
+            "birth outcomes, and infant microbiome."
         )
-        map_ind_col = INDICATOR_OPTIONS[map_indicator]
+    with _geo_col2:
+        st.markdown(
+            "**🇮🇳 India**  \n"
+            "Largest absolute burden. NFHS-5 provides "
+            "state-level ground truth for key nutrition indicators. "
+            "Critical for LSFF and MMS scale-up modelling."
+        )
+    with _geo_col3:
+        st.markdown(
+            "**🇳🇬 Nigeria**  \n"
+            "Sharpest within-country gradient (North-South). "
+            "NDHS 2018 state-level data available. "
+            "TB and malaria co-occurrence with undernutrition."
+        )
 
-    with col_left:
-        fig = choropleth_map(filtered_snap, map_ind_col, height=520)
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Data table
-    with st.expander("View data table"):
-        display_cols = ["country_name", "iso3", "who_region", map_ind_col]
-        display_cols = [c for c in display_cols if c in filtered_snap.columns]
-        tbl = filtered_snap[display_cols].dropna(subset=[map_ind_col]).sort_values(map_ind_col, ascending=False)
-        st.dataframe(tbl.reset_index(drop=True), use_container_width=True)
+    st.markdown("---")
+    st.markdown(
+        "_This preview uses the most recent available year per indicator per country "
+        "(2010-2023 window). The full commons build (LTE-led, Fall 2026) will add "
+        "longitudinal harmonization, subnational layers for all priority countries, "
+        "and direct API query access._"
+    )
 
 
-# ── Tab 2: Co-occurrence scatter ──────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Tab 2: Priority Geographies ──────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
 with tab2:
+    st.markdown("## Priority Geography Deep-Dive")
     st.markdown(
-        "**The key cross-cutting question:** Where do nutritional deficiencies co-occur with "
-        "high infectious disease burden? Countries in the upper-right quadrant face a double "
-        "burden — and are where integrated investments will have the highest leverage."
+        "Country profiles for Pakistan, India, and Nigeria — comparing modelled "
+        "global estimates to ground-truth survey data where available."
     )
 
-    col_a, col_b, col_c = st.columns(3)
-    with col_a:
-        x_label = st.selectbox("X-axis", list(INDICATOR_OPTIONS.keys()), index=0, key="sc_x")
-        x_col = INDICATOR_OPTIONS[x_label]
-    with col_b:
-        y_options = [k for k in INDICATOR_OPTIONS.keys() if INDICATOR_OPTIONS[k] != x_col]
-        default_y = next((k for k, v in INDICATOR_OPTIONS.items() if v == "tb_incidence_per100k"), y_options[0])
-        y_label = st.selectbox("Y-axis", y_options, index=y_options.index(default_y) if default_y in y_options else 0, key="sc_y")
-        y_col = INDICATOR_OPTIONS[y_label]
-    with col_c:
-        size_options = ["(none)"] + [k for k in INDICATOR_OPTIONS.keys() if INDICATOR_OPTIONS[k] not in (x_col, y_col)]
-        default_size = next((k for k, v in INDICATOR_OPTIONS.items() if v == "stunting_pct_who"), "(none)")
-        size_label = st.selectbox("Bubble size", size_options, index=size_options.index(default_size) if default_size in size_options else 0, key="sc_sz")
-        size_col = INDICATOR_OPTIONS.get(size_label)
-
-    # Highlight presets
-    highlight_preset = st.radio(
-        "Highlight countries",
-        ["None", "South Asia", "Sub-Saharan Africa", "East Africa"],
-        horizontal=True,
-    )
-    highlight = PRIORITY_COUNTRIES.get(highlight_preset, [])
-
-    fig2 = cooccurrence_scatter(
-        filtered_snap, x_col, y_col,
-        size_indicator=size_col,
-        highlight_iso3=highlight,
-        height=540,
-    )
-    st.plotly_chart(fig2, use_container_width=True)
-
-    st.markdown(
-        "_Dashed lines show global medians. Bubble size = stunting prevalence (where selected). "
-        "Countries in the upper-right quadrant face double burden._"
-    )
-
-
-# ── Tab 3: Country rankings ───────────────────────────────────────────────────
-with tab3:
-    col_l, col_r = st.columns([3, 1])
-    with col_r:
-        bar_indicator = st.selectbox(
-            "Indicator",
-            list(INDICATOR_OPTIONS.keys()),
+    # ── Country selector + view selector (side by side) ─────────────────────
+    _pg_sel_col1, _pg_sel_col2 = st.columns([1, 2])
+    with _pg_sel_col1:
+        _pg_country = st.selectbox(
+            "Select country",
+            list(DEEP_DIVE_COUNTRIES.keys()),
             index=0,
-            key="bar_ind",
+            key="pg_country_sel",
         )
-        bar_ind_col = INDICATOR_OPTIONS[bar_indicator]
-        n_countries = st.slider("Show top N countries", 10, 40, 20)
-
-    with col_l:
-        fig3 = burden_bar(filtered_snap, bar_ind_col, n=n_countries, height=max(400, n_countries * 22))
-        st.plotly_chart(fig3, use_container_width=True)
-
-
-# ── Tab 4: Trends ─────────────────────────────────────────────────────────────
-with tab4:
-    st.markdown("Track how indicators have changed over time in selected countries.")
-
-    col_l2, col_r2 = st.columns([3, 1])
-    with col_r2:
-        trend_indicator = st.selectbox(
-            "Indicator",
-            list(INDICATOR_OPTIONS.keys()),
-            index=0,
-            key="trend_ind",
+    with _pg_sel_col2:
+        _pg_view = st.radio(
+            "View",
+            ["Overview", "Trends"],
+            horizontal=True,
+            key="pg_view_sel",
         )
-        trend_col = INDICATOR_OPTIONS[trend_indicator]
 
-        # Country selector
-        available_countries = (
-            filtered_panel[["iso3", "country_name"]]
-            .dropna(subset=["country_name"])
-            .drop_duplicates()
-            .sort_values("country_name")
-        )
-        country_options = {row["country_name"]: row["iso3"] for _, row in available_countries.iterrows()}
+    _pg_iso3 = DEEP_DIVE_COUNTRIES[_pg_country]
+    _pg_row = snap[snap["iso3"] == _pg_iso3]
 
-        default_countries = ["Pakistan", "Bangladesh", "India", "Nigeria", "Ethiopia"]
-        default_sel = [c for c in default_countries if c in country_options]
+    if _pg_row.empty:
+        st.warning(f"No data found for {_pg_country} in commons snapshot.")
+    else:
+        _pg_row = _pg_row.iloc[0]
+        _pg_region = _pg_row.get("who_region", "—")
 
-        selected_names = st.multiselect(
-            "Countries",
-            list(country_options.keys()),
-            default=default_sel,
-        )
-        selected_iso3 = [country_options[n] for n in selected_names if n in country_options]
+        # ══════════════════════════════════════════════════════════════════════
+        # ── Overview: metric cards + radar + domain bars ─────────────────────
+        # ══════════════════════════════════════════════════════════════════════
+        if _pg_view == "Overview":
+            # ── Key indicator metric cards ───────────────────────────────────
+            _PG_INDICATORS = [
+                ("stunting_pct_who", "Stunting <5", "%", "UNICEF/JME", False),
+                ("low_birthweight_pct", "Low Birthweight", "%", "WHO GHO", False),
+                ("anaemia_children_pct", "Anaemia <5", "%", "WHO GHO", False),
+                ("iron_deficiency_pct", "Iron Deficiency", "%", "IHME GBD", False),
+                ("anc4_coverage_pct", "ANC4+ Coverage", "%", "WHO GHO", False),
+                ("maternal_mortality_per100k", "Maternal Mortality", "/100k", "WHO/MMEIG", False),
+                ("lsff_coverage_proxy_pct", "LSFF Coverage (proxy)", "%", "FFI", False),
+            ]
 
-    with col_l2:
-        if selected_iso3:
-            fig4 = trend_lines(filtered_panel, trend_col, selected_iso3, height=480)
-            st.plotly_chart(fig4, use_container_width=True)
-        else:
-            st.info("Select at least one country to view trends.")
+            _GROUND_TRUTH_SOURCES = {
+                "PAK": {
+                    "stunting_pct_who": "PDHS 2017-18",
+                    "low_birthweight_pct": "PDHS 2017-18",
+                    "anc4_coverage_pct": "PDHS 2017-18",
+                },
+                "IND": {
+                    "stunting_pct_who": "NFHS-5 2019-21",
+                    "anaemia_children_pct": "NFHS-5 2019-21",
+                    "anc4_coverage_pct": "NFHS-5 2019-21",
+                },
+                "NGA": {
+                    "stunting_pct_who": "NDHS 2018",
+                    "anaemia_children_pct": "NDHS 2018",
+                    "anc4_coverage_pct": "NDHS 2018",
+                },
+            }
 
+            _gt_map = _GROUND_TRUTH_SOURCES.get(_pg_iso3, {})
 
-# ── Tab 5: Burden Profile (Learning Session slide visuals) ───────────────────
-with tab5:
-    st.markdown(
-        "**Three views of the integrated burden landscape** — designed for the June Learning Session. "
-        "These illustrate the cross-portfolio analytical value of the malnutrition commons: "
-        "nutritional deficiencies, TB, HIV, and malaria co-occur in the same geographies."
-    )
+            st.markdown("### Key Indicators")
+            _pg_cols = st.columns(len(_PG_INDICATORS))
+            for _i, (_col, _lbl, _unit, _src, _) in enumerate(_PG_INDICATORS):
+                _val = _pg_row.get(_col)
+                _gmed = snap[_col].median() if _col in snap.columns else np.nan
+                _is_gt = _col in _gt_map
+                _src_display = _gt_map.get(_col, _src)
+                _badge_class = "ground-truth" if _is_gt else "modelled"
+                _badge_tip = "National survey" if _is_gt else "Modelled estimate"
 
-    sub1, sub2, sub3, sub4, sub5, sub6 = st.tabs([
-        "Composite Burden Map", "Co-Occurrence Scatter", "Country Burden Profile",
-        "LSFF Coverage Map", "Burden vs. LSFF Gap", "🇳🇬 Nigeria Subnational",
-    ])
-
-    with sub1:
-        st.markdown(
-            "Equal-weighted composite of anaemia, TB, HIV, and malaria — normalized 0–1 within each indicator. "
-            "Sub-Saharan Africa dominates, with pockets of high burden in South/Southeast Asia."
-        )
-        fig_map = composite_burden_map(filtered_snap, height=500)
-        st.plotly_chart(fig_map, use_container_width=True)
-
-    with sub2:
-        n_label = st.slider("Annotate top-N countries", 5, 20, 12, key="tb_n")
-        st.markdown(
-            "Each bubble is a country. **X = anaemia prevalence**, **Y = TB incidence**, "
-            "**size = malaria incidence**, **color = HIV prevalence**. "
-            "Countries in the upper-right face the highest combined nutritional + infectious disease burden."
-        )
-        fig_scatter = tb_scatter(filtered_snap, height=560)
-        st.plotly_chart(fig_scatter, use_container_width=True)
-
-    with sub3:
-        n_countries = st.slider("Number of countries", 10, 25, 15, key="bp_n")
-        st.markdown(
-            "Top countries ranked by composite score. Bars show normalized burden per indicator. "
-            "★ marks Foundation priority countries."
-        )
-        fig_bars = burden_profile_bars(filtered_snap, n=n_countries, height=max(500, n_countries * 36))
-        st.plotly_chart(fig_bars, use_container_width=True)
-
-    with sub4:
-        st.markdown(
-            "Wheat flour fortification legislation status by country. "
-            "**Green = mandatory programme**, **amber = voluntary**, **red = no programme**. "
-            "Coverage % is a proxy estimate (mandatory ≈ 75%, voluntary ≈ 20%, none = 0%) — "
-            "not a directly measured survey value."
-        )
-        fig_lsff_map = lsff_coverage_map(filtered_snap, height=500)
-        st.plotly_chart(fig_lsff_map, use_container_width=True)
-
-    with sub5:
-        st.markdown(
-            "**The intervention gap visual.** Countries in the lower-right — "
-            "high anaemia burden, no LSFF programme — are where fortification investment "
-            "has the most untapped leverage. Bubble size = stunting prevalence."
-        )
-        fig_lsff_gap = lsff_gap_scatter(filtered_snap, height=520)
-        st.plotly_chart(fig_lsff_gap, use_container_width=True)
-
-    with sub6:
-        if _nga_df is None:
-            st.warning(
-                "Nigeria subnational data not found. "
-                "Run `python src/data/pull_dhs_subnational.py` to download it."
-            )
-        else:
-            st.markdown(
-                "**Nigeria state-level nutrition profile — NDHS 2018.**  \n"
-                "Data from 37 states (36 + FCT Abuja) via the DHS Program public API. "
-                "The North–South gradient is one of the starkest within-country patterns "
-                "in the dataset: North West/North East states carry 2–3× the stunting "
-                "and anaemia burden of South West states, with correspondingly lower "
-                "ANC4 and vaccination coverage."
-            )
-
-            nga_view = st.radio(
-                "View",
-                ["State choropleth", "All indicators grid", "Zone comparison", "Coverage vs. burden scatter"],
-                horizontal=True,
-                key="nga_view",
-            )
-
-            if nga_view == "State choropleth":
-                nga_ind_label = st.selectbox(
-                    "Indicator",
-                    [v[0] for v in NGA_INDICATOR_CONFIG.values()],
-                    index=0,
-                    key="nga_ind_sel",
-                )
-                nga_ind_col = next(
-                    k for k, v in NGA_INDICATOR_CONFIG.items() if v[0] == nga_ind_label
-                )
-                fig_nga = nigeria_choropleth(_nga_df, _nga_geojson, nga_ind_col, height=560)
-                st.plotly_chart(fig_nga, use_container_width=True)
-
-            elif nga_view == "All indicators grid":
-                st.markdown(
-                    "_Each panel shows one indicator across 37 states. "
-                    "The spatial pattern is consistent: burden concentrates in the North, "
-                    "coverage gaps mirror it._"
-                )
-                fig_nga_grid = nigeria_multi_map(_nga_df, _nga_geojson, height=860)
-                st.plotly_chart(fig_nga_grid, use_container_width=True)
-
-            elif nga_view == "Zone comparison":
-                fig_nga_zones = nigeria_zone_bars(_nga_df, height=440)
-                st.plotly_chart(fig_nga_zones, use_container_width=True)
-
-                # Summary stats
-                with st.expander("Zone-level summary table"):
-                    zone_summary = (
-                        _nga_df.groupby("zone")[list(NGA_INDICATOR_CONFIG.keys())]
-                        .agg(["median", "min", "max"])
-                        .round(1)
+                with _pg_cols[_i]:
+                    if pd.notna(_val) and pd.notna(_gmed):
+                        _delta = _val - _gmed
+                        _higher_good = _col in ("anc4_coverage_pct", "lsff_coverage_proxy_pct")
+                        st.metric(
+                            _lbl,
+                            f"{_val:.1f}{_unit}",
+                            delta=f"{_delta:+.1f}{_unit} vs. global",
+                            delta_color="normal" if _higher_good else "inverse",
+                            help=f"Global median: {_gmed:.1f}{_unit}",
+                        )
+                    else:
+                        st.metric(_lbl, f"{_val:.1f}{_unit}" if pd.notna(_val) else "—")
+                    st.markdown(
+                        f'<span class="source-badge {_badge_class}" title="{_badge_tip}">'
+                        f'{_src_display}</span>',
+                        unsafe_allow_html=True,
                     )
-                    st.dataframe(zone_summary, use_container_width=True)
 
-            else:  # scatter
-                nga_cols = list(NGA_INDICATOR_CONFIG.keys())
-                nga_labels = {v[0].split("(")[0].strip(): k for k, v in NGA_INDICATOR_CONFIG.items()}
-                col_x, col_y, col_sz = st.columns(3)
-                with col_x:
-                    x_lbl = st.selectbox("X-axis", list(nga_labels.keys()),
-                                         index=list(nga_labels.keys()).index("ANC 4+ visits coverage"),
-                                         key="nga_x")
-                with col_y:
-                    y_lbl = st.selectbox("Y-axis", list(nga_labels.keys()),
-                                         index=list(nga_labels.keys()).index("Stunting prevalence <5"),
-                                         key="nga_y")
-                with col_sz:
-                    sz_opts = ["(none)"] + list(nga_labels.keys())
-                    sz_lbl = st.selectbox("Bubble size", sz_opts,
-                                          index=sz_opts.index("Anaemia in children 6–59 mo"),
-                                          key="nga_sz")
-                fig_nga_sc = nigeria_scatter(
-                    _nga_df,
-                    x_col=nga_labels[x_lbl],
-                    y_col=nga_labels[y_lbl],
-                    size_col=nga_labels.get(sz_lbl) if sz_lbl != "(none)" else None,
-                    height=540,
+            st.markdown("---")
+
+            # ── Radar + domain bars ──────────────────────────────────────────
+            _pg_domain_scores = compute_domain_scores(filtered_snap)
+            _pg_radar_col, _pg_bars_col = st.columns([1, 1])
+
+            with _pg_radar_col:
+                st.markdown(
+                    "**Burden profile by domain**  \n"
+                    "<small style='color:#666'>0 = best globally &middot; "
+                    "100 = worst globally &middot; outward = higher burden</small>",
+                    unsafe_allow_html=True,
                 )
-                st.plotly_chart(fig_nga_sc, use_container_width=True)
+                _pg_radar = _build_radar_fig(_pg_iso3, _pg_domain_scores, filtered_snap)
+                if _pg_radar:
+                    st.plotly_chart(_pg_radar, use_container_width=True)
+                else:
+                    st.info("Insufficient data for radar chart.")
 
-            # State data table
-            with st.expander("View state-level data table"):
-                display_cols = ["state_name", "zone"] + [
-                    c for c in NGA_INDICATOR_CONFIG if c in _nga_df.columns
-                ]
+            with _pg_bars_col:
+                st.markdown("**Indicator breakdown vs. benchmarks**")
+                _pg_domain = st.selectbox(
+                    "Domain",
+                    list(PROFILE_DOMAINS.keys()),
+                    key="pg_domain_sel",
+                )
+                _pg_bars = _build_domain_bars(_pg_iso3, filtered_snap, _pg_domain)
+                if _pg_bars:
+                    st.plotly_chart(_pg_bars, use_container_width=True)
+                else:
+                    st.info("No data for this domain.")
+
+            # ── Pakistan MUMTA callout ───────────────────────────────────────
+            if _pg_iso3 == "PAK":
+                st.markdown("---")
+                st.markdown(
+                    '<div class="context-box">'
+                    '<b>MUMTA cohort data available</b> — Pakistan is the site of the MUMTA '
+                    'prospective birth cohort in Matiari district. See the '
+                    '<b>Deep Dive: Pakistan</b> tab for cohort-level '
+                    'data on maternal nutrition, birth outcomes, infant growth, and B. infantis '
+                    'colonization.'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+
+            # ── Nigeria subnational callout ──────────────────────────────────
+            if _pg_iso3 == "NGA" and _nga_df is not None:
+                st.markdown("---")
+                st.markdown(
+                    '<div class="context-box">'
+                    '<b>Subnational data available</b> — See the '
+                    '<b>Nigeria Subnational</b> tab for state-level maps, '
+                    'zone comparisons, and coverage vs. burden analysis (NDHS 2018).'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+
+            # ── Full indicator table (expandable) ────────────────────────────
+            _pg_region_snap = snap[snap["who_region"] == _pg_region]
+            with st.expander("View all indicators"):
+                _pg_tbl_rows = []
+                for _c, (_lbl, _, _unit) in INDICATOR_CONFIG.items():
+                    if _c not in snap.columns:
+                        continue
+                    _val = _pg_row.get(_c)
+                    _gmed = snap[_c].median()
+                    _rmed = _pg_region_snap[_c].median() if _c in _pg_region_snap.columns else np.nan
+                    _pctile = (
+                        snap[_c].rank(pct=True).get(_pg_row.name) * 100
+                        if _c in snap.columns and pd.notna(_val) else np.nan
+                    )
+                    _yr = _pg_row.get(f"{_c}_year", "")
+                    _pg_tbl_rows.append({
+                        "Indicator": _lbl,
+                        "Value": f"{_val:.1f} {_unit}".strip() if pd.notna(_val) else "—",
+                        "Global median": f"{_gmed:.1f} {_unit}".strip() if pd.notna(_gmed) else "—",
+                        f"{_pg_region} median": f"{_rmed:.1f} {_unit}".strip() if pd.notna(_rmed) else "—",
+                        "Global percentile": f"{_pctile:.0f}th" if pd.notna(_pctile) else "—",
+                        "Data year": int(_yr) if pd.notna(_yr) and str(_yr) != "" else "—",
+                    })
                 st.dataframe(
-                    _nga_df[display_cols].sort_values("stunting_pct", ascending=False)
-                    .reset_index(drop=True).round(1),
+                    pd.DataFrame(_pg_tbl_rows),
                     use_container_width=True,
                     hide_index=True,
                 )
 
-            st.markdown(
-                "_Source: Nigeria Demographic and Health Survey 2018 (NDHS 2018) via "
-                "[DHS Program API](https://api.dhsprogram.com/). "
-                "Boundaries: [geoBoundaries](https://www.geoboundaries.org/) Nigeria ADM1._"
-            )
-
-    st.markdown("---")
-    st.markdown(
-        "**Export static versions** of these figures for slides: "
-        "`venv/bin/python src/viz/triple_burden.py`  "
-        "→ saves PNG + HTML to `outputs/slides/`"
-    )
-
-
-# ── Tab 6: Insights ──────────────────────────────────────────────────────────
-with tab6:
-    st.markdown(
-        "**Cross-indicator hypothesis testing** — 11 hypotheses across the Integrated Nutrition "
-        "Impact Framework causal chain, from upstream food systems drivers through nutritional "
-        "status, disease burden, and downstream human capital outcomes. "
-        "All correlations are Spearman rank; priority countries (India, Pakistan, Bangladesh, "
-        "Nigeria, Ethiopia, DRC) are outlined in each figure."
-    )
-
-    # Hypothesis registry: label → (function, one-line finding, detail text)
-    HYPOTHESES = {
-        "H1 — Vaccination gaps predict measles burden": (
-            h1_vaccination_measles,
-            "MCV dropout (r = +0.39***) is a stronger predictor than first-dose coverage alone.",
-            "Countries that achieve good MCV1 but fail to retain children through MCV2 face "
-            "outsized measles risk — likely reflecting health system continuity failures. "
-            "The dropout gap is actionable: it points to the mid-childhood contact window "
-            "(where DTP3, PCV3, and RotaC are also delivered) as the high-leverage intervention point.",
-        ),
-        "H2 — ANC coverage predicts better birth outcomes": (
-            h2_anc_birth_outcomes,
-            "ANC4+ coverage predicts lower LBW (r = −0.47***) and preterm birth (r = −0.44***).",
-            "ANC4 is both a healthcare coverage metric and the primary delivery platform for "
-            "iron/folate supplementation, nutrition counseling, and early complication detection. "
-            "Countries with <50% ANC4 coverage face compounded risk across birth outcomes.",
-        ),
-        "H3 — Malaria amplifies anaemia beyond iron deficiency": (
-            h3_malaria_anaemia,
-            "Malaria–anaemia correlation (r = +0.79***) is unchanged after controlling for iron deficiency.",
-            "Malaria drives anaemia through hemolysis and bone marrow suppression independently of "
-            "nutritional iron status. In high-malaria settings, treating iron deficiency alone "
-            "will not resolve child anaemia — co-intervention with malaria control is required.",
-        ),
-        "H4 — HIV–TB syndemic": (
-            h4_hiv_tb,
-            "HIV prevalence strongly predicts log(TB incidence) (r = +0.50***).",
-            "The relationship is concentrated in Sub-Saharan Africa, where both burdens are "
-            "co-located alongside high undernutrition — a triple syndemic. Bubble size = stunting "
-            "prevalence, revealing that high-HIV/high-TB countries also carry high malnutrition burden.",
-        ),
-        "H5 — Health system reach vs. nutrition burden": (
-            h5_system_vs_burden,
-            "Health system composite vs. nutrition burden composite: r = −0.29***.",
-            "The relationship is statistically robust but moderate — health system coverage is "
-            "necessary but not sufficient. Many countries with moderate coverage still carry high "
-            "burden, pointing to upstream food systems and income constraints. The 'crisis quadrant' "
-            "(low coverage + high burden) identifies ~25 priority countries.",
-        ),
-        "H6 — LSFF intervention gap": (
-            h6_lsff_gap,
-            "20–30 SSA countries show high iron deficiency burden with minimal LSFF coverage.",
-            "Iron deficiency and wheat flour fortification coverage are poorly correlated at country "
-            "level — the relationship is diffuse, but the gap countries (lower-right quadrant) "
-            "represent the clearest LSFF scale-up targets.",
-        ),
-        "H7 — Vitamin A deficiency vs. measles (null result)": (
-            h7_vitamin_a_measles,
-            "No country-level correlation between vitamin A deficiency and measles burden (r ≈ 0, n.s.).",
-            "This is a meaningful null result, not evidence against vitamin A supplementation. "
-            "The individual-level mechanism is well-established, but country-level aggregates are "
-            "the wrong unit of analysis: high-burden countries often run active supplementation "
-            "programs that suppress observed case counts, obscuring the relationship.",
-        ),
-        "H8 — Maternal anaemia and ANC → maternal mortality": (
-            h8_maternal_anaemia_mortality,
-            "Pregnant anaemia (r = +0.75***) and ANC4 (r = −0.74***) are the strongest MMR predictors.",
-            "This triangulation supports the causal mechanism: inadequate ANC → untreated anaemia "
-            "→ maternal hemorrhage → death. Closing the ANC4 coverage gap would likely drive the "
-            "largest single-domain reduction in maternal mortality ratio.",
-        ),
-        "H9 — Stunting predicts child mortality": (
-            h9_undernutrition_child_mortality,
-            "Stunting predicts U5MR (r = +0.81***); composite burden reaches r = +0.83***.",
-            "Stunting alone explains roughly 66% of under-5 mortality variance at country level. "
-            "The nutrition burden composite (adding anaemia, iron deficiency, LBW) adds incremental "
-            "power. Countries in the upper-right quadrant are the clearest integrated investment targets.",
-        ),
-        "H10 — Nutrition burden → human capital and GDP": (
-            h10_nutrition_human_capital,
-            "Burden vs. HCI: r = −0.85***; burden vs. log(GDP/capita): r = −0.80***.",
-            "The strongest relationships in the entire dataset. Nutrition burden predicts HCI and "
-            "GDP per capita more strongly than any individual disease or mortality indicator — "
-            "the empirical backbone of the 'nutrition as human capital investment' argument.",
-        ),
-        "H11 — Food insecurity → stunting → child mortality": (
-            h11_food_insecurity_pathway,
-            "All three causal links confirmed: food insecurity → stunting (r = +0.77***), stunting → U5MR (r = +0.82***).",
-            "The full causal chain is empirically traceable at country level. The reduced-form "
-            "food insecurity → U5MR correlation (r = +0.83***) is as strong as the mediated path, "
-            "consistent with food insecurity operating through multiple nutritional pathways "
-            "simultaneously. This supports the upstream food systems investment framing.",
-        ),
-        "Burden heatmap — top 40 countries across all indicators": (
-            burden_heatmap,
-            "Multi-domain heatmap: top 40 countries by composite nutrition burden score.",
-            "Rows sorted by composite burden; columns span nutritional status, micronutrient "
-            "deficiencies, infectious disease, coverage indicators. Red = high burden / low coverage; "
-            "green = low burden / high coverage. Foundation priority countries are outlined.",
-        ),
-    }
-
-    selected_h = st.selectbox(
-        "Select hypothesis",
-        list(HYPOTHESES.keys()),
-        index=0,
-        key="insights_sel",
-    )
-
-    fn, finding, detail = HYPOTHESES[selected_h]
-
-    # Finding callout
-    st.markdown(
-        f'<div class="context-box"><b>Key finding:</b> {finding}</div>',
-        unsafe_allow_html=True,
-    )
-    with st.expander("Interpretation and portfolio implications"):
-        st.markdown(detail)
-
-    # Generate figure — cache by hypothesis name so switching is fast
-    @st.cache_data(show_spinner=False)
-    def _get_insight_fig(h_name, _df_hash):
-        fn_map = {k: v[0] for k, v in HYPOTHESES.items()}
-        return fn_map[h_name](_insights_df, show=False)
-
-    with st.spinner("Generating figure..."):
-        fig_insight = _get_insight_fig(selected_h, len(_insights_df))
-
-    st.plotly_chart(fig_insight, use_container_width=True)
-
-    st.markdown("---")
-    st.markdown(
-        "_All correlations are Spearman rank. Partial correlations (H3, H7) use "
-        "residualization on stated confounders. Data: most recent available year per country "
-        "(2010–2023 window). Full statistical detail: `docs/insights_summary.md`._"
-    )
-
-
-# ── Tab 7: Country Profile ────────────────────────────────────────────────────
-with tab7:
-    # Build ordered country list: ★-prefixed priority countries first, then alpha
-    _all_ctry = (
-        snap[["iso3", "country_name"]].dropna(subset=["country_name"])
-        .drop_duplicates().sort_values("country_name")
-    )
-    _iso_to_name = dict(zip(_all_ctry["iso3"], _all_ctry["country_name"]))
-    _name_to_iso = dict(zip(_all_ctry["country_name"], _all_ctry["iso3"]))
-    _priority_display = [f"★ {_iso_to_name[i]}" for i in PRIORITY_ISO3 if i in _iso_to_name]
-    _other_display    = [n for n in _all_ctry["country_name"]
-                         if n not in [_iso_to_name.get(i, "") for i in PRIORITY_ISO3]]
-
-    col_cs, _, _ = st.columns([2, 1, 1])
-    with col_cs:
-        _selected_display = st.selectbox(
-            "Select country",
-            _priority_display + _other_display,
-            index=0,
-            key="profile_country_sel",
-            help="★ = Foundation priority country",
-        )
-
-    _clean_name  = _selected_display.lstrip("★").strip()
-    _profile_iso = _name_to_iso.get(_clean_name)
-
-    if not _profile_iso:
-        st.warning("Country not found in dataset.")
-    else:
-        _pr  = snap[snap["iso3"] == _profile_iso].iloc[0]
-        _pname  = _pr.get("country_name", _clean_name)
-        _region = _pr.get("who_region", "—")
-        _income = _pr.get("income_level", "—")
-        _is_priority = _profile_iso in PRIORITY_ISO3
-
-        # Data coverage count
-        _num_cols = [c for c in INDICATOR_CONFIG if c in snap.columns]
-        _n_avail  = sum(pd.notna(_pr.get(c)) for c in _num_cols)
-
-        # ── Country header ────────────────────────────────────────────────────
-        _hdr_cols = st.columns([6, 1])
-        with _hdr_cols[0]:
-            _badge = (
-                ' <span style="background:#E87722;color:white;padding:2px 10px;'
-                'border-radius:12px;font-size:0.78rem;font-weight:700;">⭐ Priority</span>'
-                if _is_priority else ""
-            )
-            st.markdown(f"## {_pname}{_badge}", unsafe_allow_html=True)
-            st.markdown(
-                f'<span style="color:#555E6E;font-size:0.9rem;">'
-                f'{_region} &nbsp;·&nbsp; {_income} &nbsp;·&nbsp; '
-                f'{_n_avail} of {len(_num_cols)} indicators available</span>',
-                unsafe_allow_html=True,
-            )
-        st.markdown("---")
-
-        # ── Key metric cards ──────────────────────────────────────────────────
-        _region_snap = snap[snap["who_region"] == _region]
-        _mcols = st.columns(len(PROFILE_KEY_METRICS))
-        for _i, (_col, _label, _unit, _hib) in enumerate(PROFILE_KEY_METRICS):
-            _val  = _pr.get(_col)
-            _gmed = snap[_col].median() if _col in snap.columns else np.nan
-            with _mcols[_i]:
-                if pd.notna(_val) and pd.notna(_gmed):
-                    _delta = _val - _gmed
-                    st.metric(
-                        _label,
-                        f"{_val:.1f}{_unit}",
-                        delta=f"{_delta:+.1f}{_unit} vs. global",
-                        delta_color="normal" if _hib else "inverse",
-                        help=f"Global median: {_gmed:.1f}{_unit}",
-                    )
-                else:
-                    st.metric(_label, f"{_val:.1f}{_unit}" if pd.notna(_val) else "—")
-
-        st.markdown("---")
-
-        # ── Radar + domain bars ───────────────────────────────────────────────
-        _domain_scores = compute_domain_scores(filtered_snap)
-
-        col_radar, col_bars = st.columns([1, 1])
-
-        with col_radar:
-            st.markdown(
-                "**Burden profile by domain**  \n"
-                "<small style='color:#666'>0 = best globally &nbsp;·&nbsp; "
-                "100 = worst globally &nbsp;·&nbsp; outward = higher burden</small>",
-                unsafe_allow_html=True,
-            )
-            _radar_fig = _build_radar_fig(_profile_iso, _domain_scores, filtered_snap)
-            if _radar_fig:
-                st.plotly_chart(_radar_fig, use_container_width=True)
-            else:
-                st.info("Insufficient data for radar chart.")
-
-        with col_bars:
-            st.markdown("**Indicator breakdown vs. benchmarks**")
-            _sel_domain = st.selectbox(
-                "Domain",
-                list(PROFILE_DOMAINS.keys()),
-                key="profile_domain_sel",
-            )
-            _bars_fig = _build_domain_bars(_profile_iso, filtered_snap, _sel_domain)
-            if _bars_fig:
-                st.plotly_chart(_bars_fig, use_container_width=True)
-            else:
-                st.info("No data for this domain.")
-
-        st.markdown("---")
-
-        # ── Trend section ─────────────────────────────────────────────────────
-        st.markdown("**Trends over time**")
-        # Only include indicators with ≥ 3 data points for this country
-        _trend_opts = {
-            INDICATOR_CONFIG[c][0]: c
-            for c in INDICATOR_CONFIG
-            if c in panel.columns
-            and panel[(panel["iso3"] == _profile_iso) & panel[c].notna()].shape[0] >= 3
-        }
-        if _trend_opts:
-            _def_trends = [l for l in _trend_opts if any(
-                kw in l.lower() for kw in ["stunt", "anaemia", "mortality", "hci"]
-            )][:2]
-            _sel_trends = st.multiselect(
-                "Select indicators",
-                list(_trend_opts.keys()),
-                default=_def_trends if _def_trends else list(_trend_opts.keys())[:2],
-                key="profile_trend_sel",
-            )
-            if _sel_trends:
-                _trend_fig = go.Figure()
-                _colors = ["#E87722", "#003366", "#009999", "#CC3333", "#6B8E23", "#666699"]
-                for _ti, _tlbl in enumerate(_sel_trends):
-                    _tc   = _trend_opts[_tlbl]
-                    _unit = INDICATOR_CONFIG[_tc][2]
-                    _pd   = (panel[(panel["iso3"] == _profile_iso) & panel[_tc].notna()]
-                             .sort_values("year"))
-                    if not _pd.empty:
-                        _trend_fig.add_trace(go.Scatter(
-                            x=_pd["year"], y=_pd[_tc],
-                            mode="lines+markers",
-                            name=f"{_tlbl}" + (f" ({_unit})" if _unit else ""),
-                            line=dict(width=2.5, color=_colors[_ti % len(_colors)]),
-                            marker=dict(size=6),
-                        ))
-                _trend_fig.update_layout(
-                    plot_bgcolor="white", paper_bgcolor="white",
-                    xaxis=dict(showgrid=True, gridcolor="#EEEEEE", title="Year",
-                               tickformat="d"),
-                    yaxis=dict(showgrid=True, gridcolor="#EEEEEE"),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02,
-                                font=dict(size=11)),
-                    height=360,
-                    margin=dict(l=60, r=40, t=50, b=40),
-                    font=dict(family="Arial, sans-serif", color="#1A1A2E"),
-                )
-                st.plotly_chart(_trend_fig, use_container_width=True)
-        else:
-            st.info("No time series data available for this country.")
-
-        st.markdown("---")
-
-        # ── Nigeria subnational section ───────────────────────────────────────
-        if _profile_iso == "NGA" and _nga_df is not None:
-            st.markdown("#### 🇳🇬 Subnational breakdown — Nigeria states (NDHS 2018)")
-            st.markdown(
-                "Nigeria is the only country in this dataset with state-level data. "
-                "Select a view below to explore the within-country distribution."
-            )
-            _nga_sub_view = st.radio(
-                "Subnational view",
-                ["State choropleth", "Zone comparison", "Coverage vs. burden scatter"],
-                horizontal=True,
-                key="profile_nga_view",
-            )
-            if _nga_sub_view == "State choropleth":
-                _nga_ind_lbl = st.selectbox(
-                    "Indicator",
-                    [v[0] for v in NGA_INDICATOR_CONFIG.values()],
-                    key="profile_nga_ind",
-                )
-                _nga_ind_col = next(k for k, v in NGA_INDICATOR_CONFIG.items() if v[0] == _nga_ind_lbl)
-                st.plotly_chart(
-                    nigeria_choropleth(_nga_df, _nga_geojson, _nga_ind_col, height=500),
-                    use_container_width=True,
-                )
-            elif _nga_sub_view == "Zone comparison":
-                st.plotly_chart(nigeria_zone_bars(_nga_df, height=400), use_container_width=True)
-            else:
-                st.plotly_chart(nigeria_scatter(_nga_df, height=480), use_container_width=True)
+            # ── Data source legend ───────────────────────────────────────────
             st.markdown("---")
-
-        # ── Full indicator table ──────────────────────────────────────────────
-        with st.expander("View all indicators"):
-            _tbl_rows = []
-            for _c, (_lbl, _, _unit) in INDICATOR_CONFIG.items():
-                if _c not in snap.columns:
-                    continue
-                _val  = _pr.get(_c)
-                _gmed = snap[_c].median()
-                _rmed = _region_snap[_c].median() if _c in _region_snap.columns else np.nan
-                # Percentile rank (higher = higher value; interpret with direction)
-                _pctile = (
-                    snap[_c].rank(pct=True).get(_pr.name) * 100
-                    if _c in snap.columns and pd.notna(_val) else np.nan
-                )
-                _yr = _pr.get(f"{_c}_year", "")
-                _tbl_rows.append({
-                    "Indicator": _lbl,
-                    "Value": f"{_val:.1f} {_unit}".strip() if pd.notna(_val) else "—",
-                    "Global median": f"{_gmed:.1f} {_unit}".strip() if pd.notna(_gmed) else "—",
-                    f"{_region} median": f"{_rmed:.1f} {_unit}".strip() if pd.notna(_rmed) else "—",
-                    "Global percentile": f"{_pctile:.0f}th" if pd.notna(_pctile) else "—",
-                    "Data year": int(_yr) if pd.notna(_yr) and str(_yr) != "" else "—",
-                })
-            st.dataframe(
-                pd.DataFrame(_tbl_rows),
-                use_container_width=True,
-                hide_index=True,
+            st.markdown(
+                '<small style="color:#555">'
+                '<span class="source-badge ground-truth">Survey name</span> = national survey ground-truth &nbsp;&nbsp;'
+                '<span class="source-badge modelled">Source</span> = modelled estimate (IHME GBD, WHO GHO, etc.)'
+                '</small>',
+                unsafe_allow_html=True,
             )
 
+        # ══════════════════════════════════════════════════════════════════════
+        # ── Trends: time series for the selected priority country ────────────
+        # ══════════════════════════════════════════════════════════════════════
+        elif _pg_view == "Trends":
+            st.markdown(f"### {_pg_country} — Indicator Trends Over Time")
 
-# ── Tab 8: Product Impact Scenario Planner ───────────────────────────────────
-with tab8:
+            # Find indicators with ≥3 data points for this country
+            _pg_trend_opts = {
+                INDICATOR_CONFIG[c][0]: c
+                for c in INDICATOR_CONFIG
+                if c in panel.columns
+                and panel[(panel["iso3"] == _pg_iso3) & panel[c].notna()].shape[0] >= 3
+            }
+
+            if not _pg_trend_opts:
+                st.info("No time series data available for this country.")
+            else:
+                # Default to a sensible set of indicators
+                _pg_def_trends = [l for l in _pg_trend_opts if any(
+                    kw in l.lower() for kw in ["stunt", "anaemia", "mortality", "hci"]
+                )][:3]
+
+                _pg_sel_trends = st.multiselect(
+                    "Select indicators to plot",
+                    list(_pg_trend_opts.keys()),
+                    default=_pg_def_trends if _pg_def_trends else list(_pg_trend_opts.keys())[:3],
+                    key="pg_trend_indicators",
+                )
+
+                # Option to overlay other priority countries for comparison
+                _pg_other_countries = {
+                    k: v for k, v in DEEP_DIVE_COUNTRIES.items() if v != _pg_iso3
+                }
+                _pg_compare = st.multiselect(
+                    "Compare with",
+                    list(_pg_other_countries.keys()),
+                    default=[],
+                    key="pg_trend_compare",
+                    help="Overlay other priority countries for comparison",
+                )
+                _pg_compare_iso3 = [_pg_other_countries[n] for n in _pg_compare]
+                _pg_all_iso3 = [_pg_iso3] + _pg_compare_iso3
+
+                if _pg_sel_trends:
+                    # One chart per selected indicator, with all selected countries overlaid
+                    _pg_trend_colors = {
+                        "PAK": "#2A9D8F",
+                        "IND": "#E87722",
+                        "NGA": "#003366",
+                    }
+                    _pg_country_names = {v: k for k, v in DEEP_DIVE_COUNTRIES.items()}
+
+                    for _ti, _tlbl in enumerate(_pg_sel_trends):
+                        _tc = _pg_trend_opts[_tlbl]
+                        _tunit = INDICATOR_CONFIG[_tc][2]
+                        _tfig = go.Figure()
+
+                        for _iso in _pg_all_iso3:
+                            _tpd = (
+                                panel[(panel["iso3"] == _iso) & panel[_tc].notna()]
+                                .sort_values("year")
+                            )
+                            if not _tpd.empty:
+                                _is_primary = _iso == _pg_iso3
+                                _tfig.add_trace(go.Scatter(
+                                    x=_tpd["year"],
+                                    y=_tpd[_tc],
+                                    mode="lines+markers",
+                                    name=_pg_country_names.get(_iso, _iso),
+                                    line=dict(
+                                        width=3 if _is_primary else 1.5,
+                                        color=_pg_trend_colors.get(_iso, "#999999"),
+                                        dash="solid" if _is_primary else "dot",
+                                    ),
+                                    marker=dict(size=7 if _is_primary else 4),
+                                ))
+
+                        _tfig.update_layout(
+                            title=dict(
+                                text=f"{_tlbl}" + (f" ({_tunit})" if _tunit else ""),
+                                font=dict(size=14),
+                            ),
+                            plot_bgcolor="white",
+                            paper_bgcolor="white",
+                            xaxis=dict(
+                                showgrid=True, gridcolor="#EEEEEE",
+                                title="Year", tickformat="d",
+                            ),
+                            yaxis=dict(showgrid=True, gridcolor="#EEEEEE"),
+                            legend=dict(
+                                orientation="h", yanchor="bottom", y=1.02,
+                                font=dict(size=11),
+                            ),
+                            height=340,
+                            margin=dict(l=60, r=40, t=60, b=40),
+                            font=dict(family="Arial, sans-serif", color="#1A1A2E"),
+                        )
+                        st.plotly_chart(_tfig, use_container_width=True)
+                else:
+                    st.info("Select at least one indicator to view trends.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Tab 3: Deep Dive — Pakistan (MUMTA cohort) ──────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+with tab3:
+    st.markdown("## MUMTA Pakistan — Prospective Birth Cohort")
+    st.markdown(
+        "The MUMTA cohort (Matiari, Sindh) provides ground-truth individual-level data "
+        "on maternal nutrition, birth outcomes, infant growth, and gut microbiome composition. "
+        "This tab compares cohort observations with the modelled country-level estimates "
+        "used elsewhere in the commons."
+    )
+
+    # Check for processed MUMTA data
+    _mumta_summary_path = ROOT / "data" / "processed" / "mumta" / "mumta_cohort_summary.csv"
+    _mumta_data_exists = _mumta_summary_path.exists()
+
+    if not _mumta_data_exists:
+        st.info(
+            "MUMTA data processing required. Run:\n\n"
+            "```\npython3 src/data/process_mumta.py\n```\n\n"
+            "This will process the raw cohort data and generate summary CSVs "
+            "in `data/processed/mumta/`."
+        )
+    elif not _MUMTA_VIZ_AVAILABLE:
+        st.warning(
+            "MUMTA visualization module not found. Ensure `src/viz/mumta.py` exists "
+            "and exports the required plotting functions."
+        )
+    else:
+        # Load MUMTA processed data
+        _mumta_cohort = pd.read_csv(_mumta_summary_path)
+        _mumta_dir = ROOT / "data" / "processed" / "mumta"
+
+        # ── Section 1: Cohort Overview ───────────────────────────────────────
+        st.markdown("### Cohort Overview")
+        _m = cohort_overview_metrics(_mumta_cohort)
+        _ov1, _ov2, _ov3, _ov4 = st.columns(4)
+        _ov1.metric("Enrolled", f"{_m.get('n_enrolled', 0):,}")
+        _ov2.metric("Live births", f"{_m.get('n_live_births', 0):,}")
+        _ov3.metric("Stillbirths", f"{_m.get('n_stillbirths', 0):,}")
+        _ov4.metric("Miscarriages", f"{_m.get('n_miscarriages', 0):,}")
+
+        _ov5, _ov6, _ov7, _ov8 = st.columns(4)
+        _ov5.metric("LBW (<2500g)", f"{_m.get('lbw_pct', 0)}%")
+        _ov6.metric("Preterm (<37wk)", f"{_m.get('preterm_pct', 0)}%")
+        _ov7.metric("Mean birthweight", f"{_m.get('mean_birth_weight', 0):,.0f}g")
+        _ov8.metric("Stunted at birth", f"{_m.get('stunted_birth_pct', 0)}%")
+
+        _ov9, _ov10, _ov11, _ov12 = st.columns(4)
+        _ov9.metric("Anaemia 19wk", f"{_m.get('anaemia_19wk_pct', 0)}%")
+        _ov10.metric("Anaemia 32wk", f"{_m.get('anaemia_32wk_pct', 0)}%",
+                     delta=f"+{(_m.get('anaemia_32wk_pct',0) - _m.get('anaemia_19wk_pct',0)):.0f}pp",
+                     delta_color="inverse")
+        _ov11.metric("Iron def 19wk", f"{_m.get('iron_def_19wk_pct', 0)}%")
+        _ov12.metric("Iron def 32wk", f"{_m.get('iron_def_32wk_pct', 0)}%")
+
+        st.markdown("---")
+
+        # ── Section 2: Birth Outcomes ────────────────────────────────────────
+        st.markdown("### Birth Outcomes by Treatment Arm")
+        _fig_bo = birth_outcomes_by_arm(_mumta_cohort)
+        st.plotly_chart(_fig_bo, use_container_width=True)
+
+        st.markdown("---")
+
+        # ── Section 3: Maternal Iron & Anemia ────────────────────────────────
+        st.markdown("### Maternal Iron & Anemia Trajectory")
+        _anemia_path = _mumta_dir / "mumta_maternal_anemia.csv"
+        if _anemia_path.exists():
+            _anemia_df = pd.read_csv(_anemia_path)
+            _fig_anemia = maternal_anemia_trajectory(_anemia_df)
+            st.plotly_chart(_fig_anemia, use_container_width=True)
+        else:
+            st.info("Maternal anemia trajectory data not yet processed.")
+
+        st.markdown("---")
+
+        # ── Section 4: Infant Growth ─────────────────────────────────────────
+        st.markdown("### Infant Growth Curves")
+        _growth_path = _mumta_dir / "mumta_infant_growth.csv"
+        if _growth_path.exists():
+            _growth_df = pd.read_csv(_growth_path)
+            _growth_metric = st.selectbox(
+                "Z-score metric",
+                ["laz", "waz", "wlz"],
+                format_func={"laz": "Length-for-age (LAZ)",
+                             "waz": "Weight-for-age (WAZ)",
+                             "wlz": "Weight-for-length (WLZ)"}.get,
+                key="mumta_growth_metric",
+            )
+            _fig_growth = infant_growth_curves(_growth_df, metric=_growth_metric)
+            st.plotly_chart(_fig_growth, use_container_width=True)
+        else:
+            st.info("Infant growth data not yet processed.")
+
+        st.markdown("---")
+
+        # ── Section 5: B. infantis Colonization ──────────────────────────────
+        st.markdown("### B. infantis Colonization")
+        _binfantis_path = _mumta_dir / "mumta_binfantis.csv"
+        if _binfantis_path.exists():
+            _binfantis_df = pd.read_csv(_binfantis_path)
+            _fig_binf = binfantis_colonization(_binfantis_df)
+            st.plotly_chart(_fig_binf, use_container_width=True)
+        else:
+            st.info("B. infantis colonization data not yet processed.")
+
+        st.markdown("---")
+
+        # ── Section 6: Model vs. Cohort Validation ───────────────────────────
+        st.markdown("### Model vs. Cohort Comparison")
+        st.markdown(
+            "How do the modelled country-level estimates (used in the Product Impact tab) "
+            "compare against observed cohort-level values from the MUMTA cohort?"
+        )
+        _pak_row = snap[snap["iso3"] == "PAK"]
+        if not _pak_row.empty:
+            _fig_validation = model_vs_cohort_comparison(_mumta_cohort, _pak_row.iloc[0])
+            st.plotly_chart(_fig_validation, use_container_width=True)
+        else:
+            st.info("Pakistan snapshot data not available for comparison.")
+
+    st.markdown("---")
+    st.markdown(
+        "_Source: MUMTA Prospective Birth Cohort, Matiari District, Sindh, Pakistan. "
+        "Data collection ongoing. Contact: Nutrition PST._"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Tab 4: Product Impact Scenario Planner ────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+with tab4:
     st.markdown(
         '<div class="context-box">'
         '<b>Portfolio product impact modeller.</b> Toggle products on/off and adjust '
@@ -1261,6 +1173,15 @@ with tab8:
                             f"<br><span style='color:#888'>{dp.get('source','')}</span></small>",
                             unsafe_allow_html=True,
                         )
+
+                # MMS: note on IFA coverage proxy
+                if pk == "mms":
+                    st.markdown(
+                        "<small style='color:#888'>ℹ️ IFA coverage is proxied by ANC4+ attendance — "
+                        "women attending ≥4 ANC visits are assumed to be the population receiving IFA. "
+                        "Actual IFA distribution rates within ANC4 attenders vary by country.</small>",
+                        unsafe_allow_html=True,
+                    )
 
                 # ⚙️ Adjustable params — sliders
                 _params = product_params_defaults(pk)
@@ -1617,6 +1538,617 @@ GNR 2022 progress tracking; COSTING model (UNICEF/WHO).
                     )
         else:
             st.info("Select a country to view context.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Tab 5: Nigeria Subnational ────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+with tab5:
+    if _nga_df is None:
+        st.warning(
+            "Nigeria subnational data not found. "
+            "Run `python src/data/pull_dhs_subnational.py` to download it."
+        )
+    else:
+        st.markdown(
+            "**Nigeria state-level nutrition profile — NDHS 2018.**  \n"
+            "Data from 37 states (36 + FCT Abuja) via the DHS Program public API. "
+            "The North-South gradient is one of the starkest within-country patterns "
+            "in the dataset: North West/North East states carry 2-3x the stunting "
+            "and anaemia burden of South West states, with correspondingly lower "
+            "ANC4 and vaccination coverage."
+        )
+
+        nga_view_t7 = st.radio(
+            "View",
+            ["State choropleth", "All indicators grid", "Zone comparison", "Coverage vs. burden scatter"],
+            horizontal=True,
+            key="nga_view_t7",
+        )
+
+        if nga_view_t7 == "State choropleth":
+            nga_ind_label_t7 = st.selectbox(
+                "Indicator",
+                [v[0] for v in NGA_INDICATOR_CONFIG.values()],
+                index=0,
+                key="nga_ind_sel_t7",
+            )
+            nga_ind_col_t7 = next(
+                k for k, v in NGA_INDICATOR_CONFIG.items() if v[0] == nga_ind_label_t7
+            )
+            fig_nga_t7 = nigeria_choropleth(_nga_df, _nga_geojson, nga_ind_col_t7, height=560)
+            st.plotly_chart(fig_nga_t7, use_container_width=True)
+
+        elif nga_view_t7 == "All indicators grid":
+            st.markdown(
+                "_Each panel shows one indicator across 37 states. "
+                "The spatial pattern is consistent: burden concentrates in the North, "
+                "coverage gaps mirror it._"
+            )
+            fig_nga_grid_t7 = nigeria_multi_map(_nga_df, _nga_geojson, height=860)
+            st.plotly_chart(fig_nga_grid_t7, use_container_width=True)
+
+        elif nga_view_t7 == "Zone comparison":
+            fig_nga_zones_t7 = nigeria_zone_bars(_nga_df, height=440)
+            st.plotly_chart(fig_nga_zones_t7, use_container_width=True)
+
+            # Summary stats
+            with st.expander("Zone-level summary table"):
+                zone_summary_t7 = (
+                    _nga_df.groupby("zone")[list(NGA_INDICATOR_CONFIG.keys())]
+                    .agg(["median", "min", "max"])
+                    .round(1)
+                )
+                st.dataframe(zone_summary_t7, use_container_width=True)
+
+        else:  # scatter
+            nga_labels_t7 = {v[0].split("(")[0].strip(): k for k, v in NGA_INDICATOR_CONFIG.items()}
+            col_x_t7, col_y_t7, col_sz_t7 = st.columns(3)
+            with col_x_t7:
+                x_lbl_t7 = st.selectbox("X-axis", list(nga_labels_t7.keys()),
+                                         index=list(nga_labels_t7.keys()).index("ANC 4+ visits coverage"),
+                                         key="nga_x_t7")
+            with col_y_t7:
+                y_lbl_t7 = st.selectbox("Y-axis", list(nga_labels_t7.keys()),
+                                         index=list(nga_labels_t7.keys()).index("Stunting prevalence <5"),
+                                         key="nga_y_t7")
+            with col_sz_t7:
+                sz_opts_t7 = ["(none)"] + list(nga_labels_t7.keys())
+                sz_lbl_t7 = st.selectbox("Bubble size", sz_opts_t7,
+                                          index=sz_opts_t7.index("Anaemia in children 6–59 mo"),
+                                          key="nga_sz_t7")
+            fig_nga_sc_t7 = nigeria_scatter(
+                _nga_df,
+                x_col=nga_labels_t7[x_lbl_t7],
+                y_col=nga_labels_t7[y_lbl_t7],
+                size_col=nga_labels_t7.get(sz_lbl_t7) if sz_lbl_t7 != "(none)" else None,
+                height=540,
+            )
+            st.plotly_chart(fig_nga_sc_t7, use_container_width=True)
+
+        # State data table
+        with st.expander("View state-level data table"):
+            display_cols_t7 = ["state_name", "zone"] + [
+                c for c in NGA_INDICATOR_CONFIG if c in _nga_df.columns
+            ]
+            st.dataframe(
+                _nga_df[display_cols_t7].sort_values("stunting_pct", ascending=False)
+                .reset_index(drop=True).round(1),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        st.markdown(
+            "_Source: Nigeria Demographic and Health Survey 2018 (NDHS 2018) via "
+            "[DHS Program API](https://api.dhsprogram.com/). "
+            "Boundaries: [geoBoundaries](https://www.geoboundaries.org/) Nigeria ADM1._"
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Tab 6: Global Context (merged ecological views + Causal Pathways) ────────
+# ══════════════════════════════════════════════════════════════════════════════
+with tab6:
+    st.markdown("### Global ecological estimates — 226 countries")
+    st.markdown(
+        '<div class="context-box">'
+        '<b>Note:</b> These views use modelled estimates (IHME GBD, WHO GHO) and should be '
+        'interpreted as ecological signals, not ground-truth. For priority-country deep-dives '
+        'with ground-truth comparisons, see Tab 2 (Priority Geographies).'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    _gc_view = st.selectbox(
+        "Select view",
+        ["Geographic Overview", "Indicator Explorer", "Co-occurrence", "Trends", "Causal Pathways", "Country Profile"],
+        index=0,
+        key="gc_view_sel",
+    )
+
+    # ── Geographic Overview ──────────────────────────────────────────────────
+    if _gc_view == "Geographic Overview":
+        col_left, col_right = st.columns([3, 1])
+        with col_right:
+            map_indicator = st.selectbox(
+                "Indicator",
+                list(INDICATOR_OPTIONS.keys()),
+                index=0,
+                key="map_ind",
+            )
+            map_ind_col = INDICATOR_OPTIONS[map_indicator]
+
+        with col_left:
+            fig_gc_map = choropleth_map(filtered_snap, map_ind_col, height=520)
+            st.plotly_chart(fig_gc_map, use_container_width=True)
+
+        # Data table
+        with st.expander("View data table"):
+            display_cols = ["country_name", "iso3", "who_region", map_ind_col]
+            display_cols = [c for c in display_cols if c in filtered_snap.columns]
+            tbl = filtered_snap[display_cols].dropna(subset=[map_ind_col]).sort_values(map_ind_col, ascending=False)
+            st.dataframe(tbl.reset_index(drop=True), use_container_width=True)
+
+    # ── Indicator Explorer (Country Rankings) ────────────────────────────────
+    elif _gc_view == "Indicator Explorer":
+        col_l, col_r = st.columns([3, 1])
+        with col_r:
+            bar_indicator = st.selectbox(
+                "Indicator",
+                list(INDICATOR_OPTIONS.keys()),
+                index=0,
+                key="bar_ind",
+            )
+            bar_ind_col = INDICATOR_OPTIONS[bar_indicator]
+            n_countries_gc = st.slider("Show top N countries", 10, 40, 20, key="gc_n_countries")
+
+        with col_l:
+            fig_gc_bar = burden_bar(filtered_snap, bar_ind_col, n=n_countries_gc, height=max(400, n_countries_gc * 22))
+            st.plotly_chart(fig_gc_bar, use_container_width=True)
+
+    # ── Co-occurrence ────────────────────────────────────────────────────────
+    elif _gc_view == "Co-occurrence":
+        st.markdown(
+            "**The key cross-cutting question:** Where do nutritional deficiencies co-occur with "
+            "high infectious disease burden? Countries in the upper-right quadrant face a double "
+            "burden — and are where integrated investments will have the highest leverage."
+        )
+
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            x_label = st.selectbox("X-axis", list(INDICATOR_OPTIONS.keys()), index=0, key="sc_x")
+            x_col = INDICATOR_OPTIONS[x_label]
+        with col_b:
+            y_options = [k for k in INDICATOR_OPTIONS.keys() if INDICATOR_OPTIONS[k] != x_col]
+            default_y = next((k for k, v in INDICATOR_OPTIONS.items() if v == "tb_incidence_per100k"), y_options[0])
+            y_label = st.selectbox("Y-axis", y_options, index=y_options.index(default_y) if default_y in y_options else 0, key="sc_y")
+            y_col = INDICATOR_OPTIONS[y_label]
+        with col_c:
+            size_options = ["(none)"] + [k for k in INDICATOR_OPTIONS.keys() if INDICATOR_OPTIONS[k] not in (x_col, y_col)]
+            default_size = next((k for k, v in INDICATOR_OPTIONS.items() if v == "stunting_pct_who"), "(none)")
+            size_label = st.selectbox("Bubble size", size_options, index=size_options.index(default_size) if default_size in size_options else 0, key="sc_sz")
+            size_col = INDICATOR_OPTIONS.get(size_label)
+
+        # Highlight presets
+        highlight_preset = st.radio(
+            "Highlight countries",
+            ["None", "South Asia", "Sub-Saharan Africa", "East Africa"],
+            horizontal=True,
+            key="gc_highlight",
+        )
+        highlight = PRIORITY_COUNTRIES.get(highlight_preset, [])
+
+        fig_gc_scatter = cooccurrence_scatter(
+            filtered_snap, x_col, y_col,
+            size_indicator=size_col,
+            highlight_iso3=highlight,
+            height=540,
+        )
+        st.plotly_chart(fig_gc_scatter, use_container_width=True)
+
+        st.markdown(
+            "_Dashed lines show global medians. Bubble size = stunting prevalence (where selected). "
+            "Countries in the upper-right quadrant face double burden._"
+        )
+
+    # ── Trends ───────────────────────────────────────────────────────────────
+    elif _gc_view == "Trends":
+        st.markdown("Track how indicators have changed over time in selected countries.")
+
+        col_l2, col_r2 = st.columns([3, 1])
+        with col_r2:
+            trend_indicator = st.selectbox(
+                "Indicator",
+                list(INDICATOR_OPTIONS.keys()),
+                index=0,
+                key="trend_ind",
+            )
+            trend_col = INDICATOR_OPTIONS[trend_indicator]
+
+            # Country selector
+            available_countries = (
+                filtered_panel[["iso3", "country_name"]]
+                .dropna(subset=["country_name"])
+                .drop_duplicates()
+                .sort_values("country_name")
+            )
+            country_options = {row["country_name"]: row["iso3"] for _, row in available_countries.iterrows()}
+
+            default_countries = ["Pakistan", "Bangladesh", "India", "Nigeria", "Ethiopia"]
+            default_sel = [c for c in default_countries if c in country_options]
+
+            selected_names = st.multiselect(
+                "Countries",
+                list(country_options.keys()),
+                default=default_sel,
+                key="gc_trend_countries",
+            )
+            selected_iso3 = [country_options[n] for n in selected_names if n in country_options]
+
+        with col_l2:
+            if selected_iso3:
+                fig_gc_trend = trend_lines(filtered_panel, trend_col, selected_iso3, height=480)
+                st.plotly_chart(fig_gc_trend, use_container_width=True)
+            else:
+                st.info("Select at least one country to view trends.")
+
+    # ── Causal Pathways ─────────────────────────────────────────────────────
+    elif _gc_view == "Causal Pathways":
+        st.markdown(
+            "**Cross-indicator hypothesis testing** — 11 hypotheses across the Integrated Nutrition "
+            "Impact Framework causal chain, from upstream food systems drivers through nutritional "
+            "status, disease burden, and downstream human capital outcomes. "
+            "All correlations are Spearman rank; priority countries (India, Pakistan, Bangladesh, "
+            "Nigeria, Ethiopia, DRC) are outlined in each figure."
+        )
+
+        # Hypothesis registry: label → (function, one-line finding, detail text)
+        HYPOTHESES = {
+            "H1 — Vaccination gaps predict measles burden": (
+                h1_vaccination_measles,
+                "MCV dropout (r = +0.39***) is a stronger predictor than first-dose coverage alone.",
+                "Countries that achieve good MCV1 but fail to retain children through MCV2 face "
+                "outsized measles risk — likely reflecting health system continuity failures. "
+                "The dropout gap is actionable: it points to the mid-childhood contact window "
+                "(where DTP3, PCV3, and RotaC are also delivered) as the high-leverage intervention point.",
+            ),
+            "H2 — ANC coverage predicts better birth outcomes": (
+                h2_anc_birth_outcomes,
+                "ANC4+ coverage predicts lower LBW (r = −0.47***) and preterm birth (r = −0.44***).",
+                "ANC4 is both a healthcare coverage metric and the primary delivery platform for "
+                "iron/folate supplementation, nutrition counseling, and early complication detection. "
+                "Countries with <50% ANC4 coverage face compounded risk across birth outcomes.",
+            ),
+            "H3 — Malaria amplifies anaemia beyond iron deficiency": (
+                h3_malaria_anaemia,
+                "Malaria–anaemia correlation (r = +0.79***) is unchanged after controlling for iron deficiency.",
+                "Malaria drives anaemia through hemolysis and bone marrow suppression independently of "
+                "nutritional iron status. In high-malaria settings, treating iron deficiency alone "
+                "will not resolve child anaemia — co-intervention with malaria control is required.",
+            ),
+            "H4 — HIV–TB syndemic": (
+                h4_hiv_tb,
+                "HIV prevalence strongly predicts log(TB incidence) (r = +0.50***).",
+                "The relationship is concentrated in Sub-Saharan Africa, where both burdens are "
+                "co-located alongside high undernutrition — a triple syndemic. Bubble size = stunting "
+                "prevalence, revealing that high-HIV/high-TB countries also carry high malnutrition burden.",
+            ),
+            "H5 — Health system reach vs. nutrition burden": (
+                h5_system_vs_burden,
+                "Health system composite vs. nutrition burden composite: r = −0.29***.",
+                "The relationship is statistically robust but moderate — health system coverage is "
+                "necessary but not sufficient. Many countries with moderate coverage still carry high "
+                "burden, pointing to upstream food systems and income constraints. The 'crisis quadrant' "
+                "(low coverage + high burden) identifies ~25 priority countries.",
+            ),
+            "H6 — LSFF intervention gap": (
+                h6_lsff_gap,
+                "20–30 SSA countries show high iron deficiency burden with minimal LSFF coverage.",
+                "Iron deficiency and wheat flour fortification coverage are poorly correlated at country "
+                "level — the relationship is diffuse, but the gap countries (lower-right quadrant) "
+                "represent the clearest LSFF scale-up targets.",
+            ),
+            "H7 — Vitamin A deficiency vs. measles (null result)": (
+                h7_vitamin_a_measles,
+                "No country-level correlation between vitamin A deficiency and measles burden (r ≈ 0, n.s.).",
+                "This is a meaningful null result, not evidence against vitamin A supplementation. "
+                "The individual-level mechanism is well-established, but country-level aggregates are "
+                "the wrong unit of analysis: high-burden countries often run active supplementation "
+                "programs that suppress observed case counts, obscuring the relationship.",
+            ),
+            "H8 — Maternal anaemia and ANC → maternal mortality": (
+                h8_maternal_anaemia_mortality,
+                "Pregnant anaemia (r = +0.75***) and ANC4 (r = −0.74***) are the strongest MMR predictors.",
+                "This triangulation supports the causal mechanism: inadequate ANC → untreated anaemia "
+                "→ maternal hemorrhage → death. Closing the ANC4 coverage gap would likely drive the "
+                "largest single-domain reduction in maternal mortality ratio.",
+            ),
+            "H9 — Stunting predicts child mortality": (
+                h9_undernutrition_child_mortality,
+                "Stunting predicts U5MR (r = +0.81***); composite burden reaches r = +0.83***.",
+                "Stunting alone explains roughly 66% of under-5 mortality variance at country level. "
+                "The nutrition burden composite (adding anaemia, iron deficiency, LBW) adds incremental "
+                "power. Countries in the upper-right quadrant are the clearest integrated investment targets.",
+            ),
+            "H10 — Nutrition burden → human capital and GDP": (
+                h10_nutrition_human_capital,
+                "Burden vs. HCI: r = −0.85***; burden vs. log(GDP/capita): r = −0.80***.",
+                "The strongest relationships in the entire dataset. Nutrition burden predicts HCI and "
+                "GDP per capita more strongly than any individual disease or mortality indicator — "
+                "the empirical backbone of the 'nutrition as human capital investment' argument.",
+            ),
+            "H11 — Food insecurity → stunting → child mortality": (
+                h11_food_insecurity_pathway,
+                "All three causal links confirmed: food insecurity → stunting (r = +0.77***), stunting → U5MR (r = +0.82***).",
+                "The full causal chain is empirically traceable at country level. The reduced-form "
+                "food insecurity → U5MR correlation (r = +0.83***) is as strong as the mediated path, "
+                "consistent with food insecurity operating through multiple nutritional pathways "
+                "simultaneously. This supports the upstream food systems investment framing.",
+            ),
+            "Burden heatmap — top 40 countries across all indicators": (
+                burden_heatmap,
+                "Multi-domain heatmap: top 40 countries by composite nutrition burden score.",
+                "Rows sorted by composite burden; columns span nutritional status, micronutrient "
+                "deficiencies, infectious disease, coverage indicators. Red = high burden / low coverage; "
+                "green = low burden / high coverage. Foundation priority countries are outlined.",
+            ),
+        }
+
+        selected_h = st.selectbox(
+            "Select hypothesis",
+            list(HYPOTHESES.keys()),
+            index=0,
+            key="gc_insights_sel",
+        )
+
+        fn, finding, detail = HYPOTHESES[selected_h]
+
+        # Finding callout
+        st.markdown(
+            f'<div class="context-box"><b>Key finding:</b> {finding}</div>',
+            unsafe_allow_html=True,
+        )
+        with st.expander("Interpretation and portfolio implications"):
+            st.markdown(detail)
+
+        # Generate figure — cache by hypothesis name so switching is fast
+        @st.cache_data(show_spinner=False)
+        def _get_insight_fig(h_name, _df_hash):
+            fn_map = {k: v[0] for k, v in HYPOTHESES.items()}
+            return fn_map[h_name](_insights_df, show=False)
+
+        with st.spinner("Generating figure..."):
+            fig_insight = _get_insight_fig(selected_h, len(_insights_df))
+
+        st.plotly_chart(fig_insight, use_container_width=True)
+
+        st.markdown("---")
+        st.markdown(
+            "_All correlations are Spearman rank. Partial correlations (H3, H7) use "
+            "residualization on stated confounders. Data: most recent available year per country "
+            "(2010–2023 window). Full statistical detail: `docs/insights_summary.md`._"
+        )
+
+    # ── Country Profile ──────────────────────────────────────────────────────
+    elif _gc_view == "Country Profile":
+        # Build ordered country list: ★-prefixed priority countries first, then alpha
+        _all_ctry = (
+            snap[["iso3", "country_name"]].dropna(subset=["country_name"])
+            .drop_duplicates().sort_values("country_name")
+        )
+        _iso_to_name = dict(zip(_all_ctry["iso3"], _all_ctry["country_name"]))
+        _name_to_iso = dict(zip(_all_ctry["country_name"], _all_ctry["iso3"]))
+        _priority_display = [f"★ {_iso_to_name[i]}" for i in PRIORITY_ISO3 if i in _iso_to_name]
+        _other_display    = [n for n in _all_ctry["country_name"]
+                             if n not in [_iso_to_name.get(i, "") for i in PRIORITY_ISO3]]
+
+        col_cs, _, _ = st.columns([2, 1, 1])
+        with col_cs:
+            _selected_display = st.selectbox(
+                "Select country",
+                _priority_display + _other_display,
+                index=0,
+                key="profile_country_sel",
+                help="★ = Foundation priority country",
+            )
+
+        _clean_name  = _selected_display.lstrip("★").strip()
+        _profile_iso = _name_to_iso.get(_clean_name)
+
+        if not _profile_iso:
+            st.warning("Country not found in dataset.")
+        else:
+            _pr  = snap[snap["iso3"] == _profile_iso].iloc[0]
+            _pname  = _pr.get("country_name", _clean_name)
+            _region = _pr.get("who_region", "—")
+            _income = _pr.get("income_level", "—")
+            _is_priority = _profile_iso in PRIORITY_ISO3
+
+            # Data coverage count
+            _num_cols = [c for c in INDICATOR_CONFIG if c in snap.columns]
+            _n_avail  = sum(pd.notna(_pr.get(c)) for c in _num_cols)
+
+            # ── Country header ────────────────────────────────────────────────────
+            _hdr_cols = st.columns([6, 1])
+            with _hdr_cols[0]:
+                _badge = (
+                    ' <span style="background:#E87722;color:white;padding:2px 10px;'
+                    'border-radius:12px;font-size:0.78rem;font-weight:700;">⭐ Priority</span>'
+                    if _is_priority else ""
+                )
+                st.markdown(f"## {_pname}{_badge}", unsafe_allow_html=True)
+                st.markdown(
+                    f'<span style="color:#555E6E;font-size:0.9rem;">'
+                    f'{_region} &nbsp;·&nbsp; {_income} &nbsp;·&nbsp; '
+                    f'{_n_avail} of {len(_num_cols)} indicators available</span>',
+                    unsafe_allow_html=True,
+                )
+            st.markdown("---")
+
+            # ── Key metric cards ──────────────────────────────────────────────────
+            _region_snap = snap[snap["who_region"] == _region]
+            _mcols = st.columns(len(PROFILE_KEY_METRICS))
+            for _i, (_col, _label, _unit, _hib) in enumerate(PROFILE_KEY_METRICS):
+                _val  = _pr.get(_col)
+                _gmed = snap[_col].median() if _col in snap.columns else np.nan
+                with _mcols[_i]:
+                    if pd.notna(_val) and pd.notna(_gmed):
+                        _delta = _val - _gmed
+                        st.metric(
+                            _label,
+                            f"{_val:.1f}{_unit}",
+                            delta=f"{_delta:+.1f}{_unit} vs. global",
+                            delta_color="normal" if _hib else "inverse",
+                            help=f"Global median: {_gmed:.1f}{_unit}",
+                        )
+                    else:
+                        st.metric(_label, f"{_val:.1f}{_unit}" if pd.notna(_val) else "—")
+
+            st.markdown("---")
+
+            # ── Radar + domain bars ───────────────────────────────────────────────
+            _domain_scores = compute_domain_scores(filtered_snap)
+
+            col_radar, col_bars = st.columns([1, 1])
+
+            with col_radar:
+                st.markdown(
+                    "**Burden profile by domain**  \n"
+                    "<small style='color:#666'>0 = best globally &nbsp;·&nbsp; "
+                    "100 = worst globally &nbsp;·&nbsp; outward = higher burden</small>",
+                    unsafe_allow_html=True,
+                )
+                _radar_fig = _build_radar_fig(_profile_iso, _domain_scores, filtered_snap)
+                if _radar_fig:
+                    st.plotly_chart(_radar_fig, use_container_width=True)
+                else:
+                    st.info("Insufficient data for radar chart.")
+
+            with col_bars:
+                st.markdown("**Indicator breakdown vs. benchmarks**")
+                _sel_domain = st.selectbox(
+                    "Domain",
+                    list(PROFILE_DOMAINS.keys()),
+                    key="profile_domain_sel",
+                )
+                _bars_fig = _build_domain_bars(_profile_iso, filtered_snap, _sel_domain)
+                if _bars_fig:
+                    st.plotly_chart(_bars_fig, use_container_width=True)
+                else:
+                    st.info("No data for this domain.")
+
+            st.markdown("---")
+
+            # ── Trend section ─────────────────────────────────────────────────────
+            st.markdown("**Trends over time**")
+            # Only include indicators with ≥ 3 data points for this country
+            _trend_opts = {
+                INDICATOR_CONFIG[c][0]: c
+                for c in INDICATOR_CONFIG
+                if c in panel.columns
+                and panel[(panel["iso3"] == _profile_iso) & panel[c].notna()].shape[0] >= 3
+            }
+            if _trend_opts:
+                _def_trends = [l for l in _trend_opts if any(
+                    kw in l.lower() for kw in ["stunt", "anaemia", "mortality", "hci"]
+                )][:2]
+                _sel_trends = st.multiselect(
+                    "Select indicators",
+                    list(_trend_opts.keys()),
+                    default=_def_trends if _def_trends else list(_trend_opts.keys())[:2],
+                    key="profile_trend_sel",
+                )
+                if _sel_trends:
+                    _trend_fig = go.Figure()
+                    _colors = ["#E87722", "#003366", "#009999", "#CC3333", "#6B8E23", "#666699"]
+                    for _ti, _tlbl in enumerate(_sel_trends):
+                        _tc   = _trend_opts[_tlbl]
+                        _unit = INDICATOR_CONFIG[_tc][2]
+                        _pd   = (panel[(panel["iso3"] == _profile_iso) & panel[_tc].notna()]
+                                 .sort_values("year"))
+                        if not _pd.empty:
+                            _trend_fig.add_trace(go.Scatter(
+                                x=_pd["year"], y=_pd[_tc],
+                                mode="lines+markers",
+                                name=f"{_tlbl}" + (f" ({_unit})" if _unit else ""),
+                                line=dict(width=2.5, color=_colors[_ti % len(_colors)]),
+                                marker=dict(size=6),
+                            ))
+                    _trend_fig.update_layout(
+                        plot_bgcolor="white", paper_bgcolor="white",
+                        xaxis=dict(showgrid=True, gridcolor="#EEEEEE", title="Year",
+                                   tickformat="d"),
+                        yaxis=dict(showgrid=True, gridcolor="#EEEEEE"),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                    font=dict(size=11)),
+                        height=360,
+                        margin=dict(l=60, r=40, t=50, b=40),
+                        font=dict(family="Arial, sans-serif", color="#1A1A2E"),
+                    )
+                    st.plotly_chart(_trend_fig, use_container_width=True)
+            else:
+                st.info("No time series data available for this country.")
+
+            st.markdown("---")
+
+            # ── Nigeria subnational section ───────────────────────────────────────
+            if _profile_iso == "NGA" and _nga_df is not None:
+                st.markdown("#### 🇳🇬 Subnational breakdown — Nigeria states (NDHS 2018)")
+                st.markdown(
+                    "Nigeria is the only country in this dataset with state-level data. "
+                    "Select a view below to explore the within-country distribution."
+                )
+                _nga_sub_view = st.radio(
+                    "Subnational view",
+                    ["State choropleth", "Zone comparison", "Coverage vs. burden scatter"],
+                    horizontal=True,
+                    key="profile_nga_view",
+                )
+                if _nga_sub_view == "State choropleth":
+                    _nga_ind_lbl = st.selectbox(
+                        "Indicator",
+                        [v[0] for v in NGA_INDICATOR_CONFIG.values()],
+                        key="profile_nga_ind",
+                    )
+                    _nga_ind_col = next(k for k, v in NGA_INDICATOR_CONFIG.items() if v[0] == _nga_ind_lbl)
+                    st.plotly_chart(
+                        nigeria_choropleth(_nga_df, _nga_geojson, _nga_ind_col, height=500),
+                        use_container_width=True,
+                    )
+                elif _nga_sub_view == "Zone comparison":
+                    st.plotly_chart(nigeria_zone_bars(_nga_df, height=400), use_container_width=True)
+                else:
+                    st.plotly_chart(nigeria_scatter(_nga_df, height=480), use_container_width=True)
+                st.markdown("---")
+
+            # ── Full indicator table ──────────────────────────────────────────────
+            with st.expander("View all indicators"):
+                _tbl_rows = []
+                for _c, (_lbl, _, _unit) in INDICATOR_CONFIG.items():
+                    if _c not in snap.columns:
+                        continue
+                    _val  = _pr.get(_c)
+                    _gmed = snap[_c].median()
+                    _rmed = _region_snap[_c].median() if _c in _region_snap.columns else np.nan
+                    # Percentile rank (higher = higher value; interpret with direction)
+                    _pctile = (
+                        snap[_c].rank(pct=True).get(_pr.name) * 100
+                        if _c in snap.columns and pd.notna(_val) else np.nan
+                    )
+                    _yr = _pr.get(f"{_c}_year", "")
+                    _tbl_rows.append({
+                        "Indicator": _lbl,
+                        "Value": f"{_val:.1f} {_unit}".strip() if pd.notna(_val) else "—",
+                        "Global median": f"{_gmed:.1f} {_unit}".strip() if pd.notna(_gmed) else "—",
+                        f"{_region} median": f"{_rmed:.1f} {_unit}".strip() if pd.notna(_rmed) else "—",
+                        "Global percentile": f"{_pctile:.0f}th" if pd.notna(_pctile) else "—",
+                        "Data year": int(_yr) if pd.notna(_yr) and str(_yr) != "" else "—",
+                    })
+                st.dataframe(
+                    pd.DataFrame(_tbl_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
 
 # ── Footer ────────────────────────────────────────────────────────────────────
