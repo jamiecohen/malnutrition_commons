@@ -979,3 +979,416 @@ def adverse_outcome_summary(cohort_df):
             })
 
     return pd.DataFrame(rows)
+
+
+# ── Enteric pathogen & gut dysfunction visualizations ───────────────────────
+
+# Category colors for pathogen groups
+_CATEGORY_COLORS = {
+    "Bacteria": "#003366",
+    "Diarrheagenic E. coli": "#E87722",
+    "Virus": "#2A9D8F",
+    "Parasite": "#7C3AED",
+    "Helminth": "#CC3333",
+}
+
+
+def pathogen_detection_heatmap(tac_df, specimen_type="all"):
+    """
+    Heatmap of pathogen detection rates (%) by timepoint.
+
+    Rows = pathogens (sorted by peak detection rate), columns = timepoints.
+    Color intensity = detection rate. Filters to maternal or infant specimens.
+
+    Parameters
+    ----------
+    tac_df : DataFrame
+        Long-format TAC data from mumta_tac_pathogens.csv.
+    specimen_type : str
+        'maternal', 'infant', or 'all'.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    if _is_empty(tac_df):
+        return _empty_figure("No TAC data available")
+
+    df = tac_df.copy()
+    if specimen_type != "all":
+        df = df[df["specimen_type"] == specimen_type]
+
+    if df.empty:
+        return _empty_figure(f"No {specimen_type} TAC data")
+
+    # Compute detection rate per pathogen per timepoint
+    rates = (
+        df.groupby(["pathogen_label", "timepoint"])["detected"]
+        .mean()
+        .unstack(fill_value=0)
+        * 100
+    )
+
+    # Sort by max detection rate across any timepoint
+    rates["_max"] = rates.max(axis=1)
+    rates = rates.sort_values("_max", ascending=True).drop(columns="_max")
+
+    # Filter to pathogens detected at least once at >5%
+    rates = rates[rates.max(axis=1) > 5]
+
+    if rates.empty:
+        return _empty_figure("No pathogens detected above 5% threshold")
+
+    # Ensure timepoint column order
+    tp_order = [tp for tp in TIMEPOINT_ORDER if tp in rates.columns]
+    rates = rates[tp_order]
+
+    # Build heatmap
+    # Create labels combining timepoint + specimen type
+    if specimen_type == "all":
+        col_labels = tp_order
+    else:
+        col_labels = tp_order
+
+    fig = go.Figure(data=go.Heatmap(
+        z=rates.values,
+        x=col_labels,
+        y=rates.index.tolist(),
+        colorscale=[
+            [0.0, "#F8F9FA"],
+            [0.15, "#FFF3E0"],
+            [0.3, "#FFB74D"],
+            [0.5, "#E87722"],
+            [0.7, "#CC3333"],
+            [1.0, "#7B1FA2"],
+        ],
+        colorbar=dict(title=dict(text="Detection<br>rate (%)", font=dict(size=11))),
+        text=[[f"{v:.0f}%" if v > 0 else "" for v in row] for row in rates.values],
+        texttemplate="%{text}",
+        textfont=dict(size=10),
+        hoverongaps=False,
+        hovertemplate="<b>%{y}</b><br>%{x}: %{z:.1f}%<extra></extra>",
+    ))
+
+    specimen_label = specimen_type.capitalize() if specimen_type != "all" else "All"
+    fig.update_layout(
+        title=dict(
+            text=f"Enteric Pathogen Detection — {specimen_label} Specimens",
+            font=dict(size=15),
+        ),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        xaxis=dict(title="Timepoint", side="bottom"),
+        yaxis=dict(title="", automargin=True),
+        height=max(350, len(rates) * 22 + 120),
+        margin=dict(l=160, r=80, t=60, b=60),
+        font=FONT,
+    )
+
+    return fig
+
+
+def pathogen_burden_trajectory(tac_df):
+    """
+    Line chart: mean number of pathogens detected per person over time,
+    split by maternal vs infant specimens, colored by treatment arm.
+
+    Parameters
+    ----------
+    tac_df : DataFrame
+        Long-format TAC data.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    if _is_empty(tac_df):
+        return _empty_figure("No TAC data available")
+
+    # Count unique pathogens detected per person per timepoint per specimen
+    burden = (
+        tac_df[tac_df["detected"]]
+        .groupby(["study_id", "arm", "timepoint", "specimen_type"])
+        .size()
+        .reset_index(name="n_pathogens")
+    )
+
+    # Also need to include people with 0 detections
+    all_combos = (
+        tac_df[["study_id", "arm", "timepoint", "specimen_type"]]
+        .drop_duplicates()
+    )
+    burden = all_combos.merge(burden, on=["study_id", "arm", "timepoint", "specimen_type"], how="left")
+    burden["n_pathogens"] = burden["n_pathogens"].fillna(0)
+
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=["Maternal stool", "Infant stool"],
+        shared_yaxes=True,
+        horizontal_spacing=0.08,
+    )
+
+    for col_idx, specimen in enumerate(["maternal", "infant"], 1):
+        sub = burden[burden["specimen_type"] == specimen]
+        if sub.empty:
+            continue
+
+        for arm in ARM_ORDER:
+            arm_data = sub[sub["arm"] == arm]
+            if arm_data.empty:
+                continue
+
+            # Mean and SE per timepoint
+            stats = (
+                arm_data.groupby("timepoint")["n_pathogens"]
+                .agg(["mean", "sem", "count"])
+                .reindex(TIMEPOINT_ORDER)
+                .dropna(subset=["mean"])
+            )
+
+            fig.add_trace(
+                go.Scatter(
+                    x=stats.index.tolist(),
+                    y=stats["mean"],
+                    mode="lines+markers",
+                    name=ARM_LABELS.get(arm, arm),
+                    line=dict(color=ARM_COLORS.get(arm, "#999"), width=2),
+                    marker=dict(size=6),
+                    error_y=dict(
+                        type="data",
+                        array=stats["sem"].tolist(),
+                        visible=True,
+                        thickness=1,
+                    ),
+                    legendgroup=arm,
+                    showlegend=(col_idx == 1),
+                ),
+                row=1, col=col_idx,
+            )
+
+    fig.update_layout(
+        title=dict(text="Enteric Pathogen Burden Over Time by Arm", font=dict(size=15)),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=400,
+        margin=dict(l=60, r=40, t=80, b=60),
+        legend=dict(orientation="h", yanchor="bottom", y=1.08, font=dict(size=10)),
+        font=FONT,
+    )
+    fig.update_yaxes(title_text="Mean pathogens detected", row=1, col=1,
+                     showgrid=True, gridcolor="#EEEEEE", rangemode="tozero")
+    fig.update_yaxes(showgrid=True, gridcolor="#EEEEEE", rangemode="tozero", row=1, col=2)
+    fig.update_xaxes(showgrid=False)
+
+    return fig
+
+
+def gut_inflammation_vs_growth(inflammation_df, growth_df):
+    """
+    Scatter: gut inflammation (MPO) vs concurrent infant growth (LAZ),
+    colored by treatment arm. Shows the EED-growth relationship.
+
+    Parameters
+    ----------
+    inflammation_df : DataFrame
+        Long-format gut inflammation data with mpo, timepoint, specimen_type.
+    growth_df : DataFrame
+        Long-format infant growth data with laz, month.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    if _is_empty(inflammation_df) or _is_empty(growth_df):
+        return _empty_figure("Insufficient data for inflammation–growth analysis")
+
+    # Map inflammation timepoints to growth months for matching
+    tp_to_month = {
+        "1-2mo": 1,
+        "3-4mo": 3,
+        "5-6mo": 5,
+        "12mo": 8,  # closest available growth month
+    }
+
+    # Get infant MPO only
+    inf_mpo = inflammation_df[
+        (inflammation_df["specimen_type"] == "infant") &
+        (inflammation_df["mpo"].notna())
+    ].copy()
+    inf_mpo["month"] = inf_mpo["timepoint"].map(tp_to_month)
+    inf_mpo = inf_mpo.dropna(subset=["month"])
+    inf_mpo["month"] = inf_mpo["month"].astype(int)
+
+    # Merge with growth data
+    merged = inf_mpo.merge(
+        growth_df[["study_id", "arm", "month", "laz"]].dropna(subset=["laz"]),
+        on=["study_id", "month"],
+        how="inner",
+        suffixes=("", "_growth"),
+    )
+
+    if merged.empty or len(merged) < 20:
+        return _empty_figure("Insufficient paired inflammation–growth data")
+
+    # Log-transform MPO for visualization
+    merged["log_mpo"] = np.log10(merged["mpo"].clip(lower=1))
+
+    fig = go.Figure()
+
+    for arm in ARM_ORDER:
+        sub = merged[merged["arm"] == arm]
+        if sub.empty:
+            continue
+
+        fig.add_trace(go.Scatter(
+            x=sub["log_mpo"],
+            y=sub["laz"],
+            mode="markers",
+            name=ARM_LABELS.get(arm, arm),
+            marker=dict(
+                color=_hex_to_rgba(ARM_COLORS.get(arm, "#999"), 0.6),
+                size=6,
+                line=dict(color=ARM_COLORS.get(arm, "#999"), width=0.5),
+            ),
+            hovertemplate=(
+                f"<b>{ARM_LABELS.get(arm, arm)}</b><br>"
+                "MPO: %{customdata[0]:.0f} ng/mL<br>"
+                "LAZ: %{y:.2f}<br>"
+                "Month: %{customdata[1]}<extra></extra>"
+            ),
+            customdata=np.column_stack([sub["mpo"], sub["month"]]),
+        ))
+
+    # Add stunting threshold
+    fig.add_hline(y=-2, line_dash="dash", line_color="#CC3333", line_width=1.5,
+                  annotation_text="Stunting threshold (LAZ < -2)",
+                  annotation_position="bottom right",
+                  annotation_font=dict(size=9, color="#CC3333"))
+
+    # Correlation annotation
+    valid = merged[["log_mpo", "laz"]].dropna()
+    if len(valid) > 10:
+        try:
+            from scipy import stats as sp_stats
+            r, p = sp_stats.spearmanr(valid["log_mpo"], valid["laz"])
+            p_str = "p < 0.001" if p < 0.001 else f"p = {p:.3f}"
+            fig.add_annotation(
+                text=f"Spearman r = {r:.2f}, {p_str} (n = {len(valid)})",
+                xref="paper", yref="paper", x=0.02, y=0.98,
+                showarrow=False,
+                font=dict(size=11, color="#333"),
+                bgcolor="rgba(255,255,255,0.8)",
+            )
+        except ImportError:
+            # Scipy not available — show n only
+            fig.add_annotation(
+                text=f"n = {len(valid)} paired observations",
+                xref="paper", yref="paper", x=0.02, y=0.98,
+                showarrow=False,
+                font=dict(size=11, color="#333"),
+                bgcolor="rgba(255,255,255,0.8)",
+            )
+
+    fig.update_layout(
+        title=dict(text="Gut Inflammation (MPO) vs. Infant Growth (LAZ)", font=dict(size=15)),
+        xaxis=dict(title="log₁₀(MPO ng/mL)", showgrid=True, gridcolor="#EEEEEE"),
+        yaxis=dict(title="Length-for-age Z-score (LAZ)", showgrid=True, gridcolor="#EEEEEE"),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=11)),
+        height=450,
+        margin=dict(l=60, r=40, t=80, b=60),
+        font=FONT,
+    )
+
+    return fig
+
+
+def top_pathogens_by_timepoint(tac_df, n_top=10):
+    """
+    Grouped bar chart: top N pathogens by detection rate at each timepoint,
+    comparing maternal vs infant specimens.
+
+    Parameters
+    ----------
+    tac_df : DataFrame
+        Long-format TAC data.
+    n_top : int
+        Number of top pathogens to show.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    if _is_empty(tac_df):
+        return _empty_figure("No TAC data available")
+
+    # Get overall top pathogens by max detection rate across any timepoint
+    overall_rates = tac_df.groupby("pathogen_label")["detected"].mean() * 100
+    top = overall_rates.nlargest(n_top).index.tolist()
+
+    df = tac_df[tac_df["pathogen_label"].isin(top)].copy()
+
+    # Split into maternal and infant timepoints
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=["Maternal stool", "Infant stool"],
+        shared_yaxes=True,
+        horizontal_spacing=0.08,
+    )
+
+    for col_idx, specimen in enumerate(["maternal", "infant"], 1):
+        sub = df[df["specimen_type"] == specimen]
+        if sub.empty:
+            continue
+
+        tp_order_sub = [tp for tp in TIMEPOINT_ORDER
+                        if tp in sub["timepoint"].unique()]
+
+        rates_pivot = (
+            sub.groupby(["pathogen_label", "timepoint"])["detected"]
+            .mean()
+            .unstack(fill_value=0) * 100
+        )
+        rates_pivot = rates_pivot.reindex(columns=tp_order_sub, fill_value=0)
+        # Sort by max rate
+        rates_pivot = rates_pivot.loc[rates_pivot.max(axis=1).sort_values(ascending=False).index]
+
+        tp_colors = {
+            "19wk": "#003366", "32wk": "#336699",
+            "1-2mo": "#E87722", "3-4mo": "#CC3333",
+            "5-6mo": "#7C3AED", "12mo": "#2A9D8F",
+        }
+
+        for tp in tp_order_sub:
+            fig.add_trace(
+                go.Bar(
+                    x=rates_pivot[tp].values,
+                    y=rates_pivot.index.tolist(),
+                    orientation="h",
+                    name=tp,
+                    marker_color=tp_colors.get(tp, "#999"),
+                    legendgroup=tp,
+                    showlegend=(col_idx == 1),
+                    text=[f"{v:.0f}%" if v > 3 else "" for v in rates_pivot[tp].values],
+                    textposition="outside",
+                    textfont=dict(size=9),
+                ),
+                row=1, col=col_idx,
+            )
+
+    fig.update_layout(
+        title=dict(text=f"Top {n_top} Pathogen Detection Rates by Timepoint", font=dict(size=15)),
+        barmode="group",
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=max(400, n_top * 35 + 120),
+        margin=dict(l=140, r=40, t=80, b=40),
+        legend=dict(orientation="h", yanchor="bottom", y=1.06, font=dict(size=10)),
+        font=FONT,
+    )
+    fig.update_xaxes(title_text="Detection rate (%)", showgrid=True, gridcolor="#EEEEEE",
+                     rangemode="tozero")
+    fig.update_yaxes(automargin=True)
+
+    return fig

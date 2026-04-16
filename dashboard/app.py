@@ -89,6 +89,10 @@ try:
         infant_growth_curves,
         binfantis_colonization,
         model_vs_cohort_comparison,
+        pathogen_detection_heatmap,
+        pathogen_burden_trajectory,
+        gut_inflammation_vs_growth,
+        top_pathogens_by_timepoint,
         ARM_LABELS as MUMTA_ARM_LABELS,
     )
     _MUMTA_VIZ_AVAILABLE = True
@@ -1121,7 +1125,89 @@ with tab3:
 
         st.markdown("---")
 
-        # ── Section 6: Model vs. Cohort Validation ───────────────────────────
+        # ── Section 6: Enteric Pathogen Panel (TAC) ──────────────────────────
+        st.markdown("### Enteric Pathogen Panel (TaqMan Array Card)")
+        st.markdown(
+            "TAC data from a substudy (~200 participants) provides qPCR-based detection "
+            "of 37 enteric pathogens across maternal and infant stool specimens. "
+            "Ct < 35 = detected. These data reveal the scale of environmental enteric "
+            "pathogen exposure in this population."
+        )
+        _tac_path = _mumta_dir / "mumta_tac_pathogens.csv"
+        if _tac_path.exists():
+            _tac_df = pd.read_csv(_tac_path)
+
+            _tac_view = st.radio(
+                "TAC view",
+                ["Detection heatmap", "Top pathogens", "Pathogen burden trajectory"],
+                horizontal=True,
+                key="mumta_tac_view",
+            )
+
+            if _tac_view == "Detection heatmap":
+                _tac_specimen = st.radio(
+                    "Specimen",
+                    ["maternal", "infant"],
+                    horizontal=True,
+                    key="mumta_tac_specimen",
+                )
+                _fig_tac_hm = pathogen_detection_heatmap(_tac_df, specimen_type=_tac_specimen)
+                st.plotly_chart(_fig_tac_hm, use_container_width=True)
+
+            elif _tac_view == "Top pathogens":
+                _fig_tac_top = top_pathogens_by_timepoint(_tac_df, n_top=10)
+                st.plotly_chart(_fig_tac_top, use_container_width=True)
+
+            else:  # Pathogen burden trajectory
+                _fig_tac_burden = pathogen_burden_trajectory(_tac_df)
+                st.plotly_chart(_fig_tac_burden, use_container_width=True)
+
+            st.markdown(
+                '<div class="context-box">'
+                '<b>Key observation:</b> Maternal stool shows high baseline pathogen carriage '
+                '(Giardia ~57%, EAEC ~58%, EPEC ~62% at 19 weeks). Infant pathogen acquisition '
+                'accelerates after 3 months, with Giardia rising from 6% at 1-2 months to 43% '
+                'by 12 months — consistent with the environmental enteric dysfunction (EED) '
+                'pathway hypothesized to impair nutrient absorption and linear growth.'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.info("TAC pathogen data not yet processed. Run `python src/data/process_mumta.py --force`.")
+
+        st.markdown("---")
+
+        # ── Section 7: Gut Inflammation & Growth ─────────────────────────────
+        st.markdown("### Gut Inflammation & Infant Growth")
+        st.markdown(
+            "Linking fecal MPO (myeloperoxidase, a marker of gut inflammation / EED) "
+            "to concurrent infant length-for-age Z-scores (LAZ). Higher gut inflammation "
+            "is hypothesized to impair nutrient absorption and drive growth faltering."
+        )
+        _inflam_path = _mumta_dir / "mumta_gut_inflammation.csv"
+        _growth_path = _mumta_dir / "mumta_infant_growth.csv"
+        if _inflam_path.exists() and _growth_path.exists():
+            _inflam_df = pd.read_csv(_inflam_path)
+            _growth_df_gut = pd.read_csv(_growth_path)
+            _fig_mpo_growth = gut_inflammation_vs_growth(_inflam_df, _growth_df_gut)
+            st.plotly_chart(_fig_mpo_growth, use_container_width=True)
+
+            st.markdown(
+                '<div class="context-box">'
+                '<b>Relevance to product strategy:</b> If gut inflammation mediates growth '
+                'faltering, then interventions targeting the maternal/infant gut (Azithromycin '
+                'in Arm C, Choline+Nicotinamide in Arm D) may modify this pathway. The MPO–LAZ '
+                'relationship across arms will indicate whether the interventions reduce gut '
+                'inflammation and whether that translates to improved growth.'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.info("Gut inflammation or infant growth data not yet processed.")
+
+        st.markdown("---")
+
+        # ── Section 8: Model vs. Cohort Validation ───────────────────────────
         st.markdown("### Model vs. Cohort Comparison")
         st.markdown(
             "How do the modelled country-level estimates (used in the Product Impact tab) "

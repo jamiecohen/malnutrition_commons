@@ -45,6 +45,7 @@ OUTPUT_FILES = [
     "mumta_binfantis.csv",
     "mumta_gut_inflammation.csv",
     "mumta_microbiome_top_genera.csv",
+    "mumta_tac_pathogens.csv",
 ]
 
 # Follow-up suffixes: F0 = birth, F1-F8 = follow-ups
@@ -368,6 +369,134 @@ def build_microbiome_top_genera():
 
 
 # ---------------------------------------------------------------------------
+# 7. TAC enteric pathogen panel (long format)
+# ---------------------------------------------------------------------------
+
+# Clinical enteric pathogens (excluding controls, AMR markers, and non-enteric targets)
+CLINICAL_PATHOGENS = {
+    # Bacteria
+    "campylobacter_jejuni_coli": "Campylobacter",
+    "campylobacter_pan": "Campylobacter (pan)",
+    "salmonella": "Salmonella",
+    "shigella_eiec": "Shigella/EIEC",
+    "shigella_sonnei": "Shigella sonnei",
+    "shigella_flexneri_non6": "Shigella flexneri",
+    "shigella_flexneri_6": "Shigella flexneri 6",
+    "aeromonas": "Aeromonas",
+    "plesiomonas": "Plesiomonas",
+    "v_cholerae": "V. cholerae",
+    "c_difficile": "C. difficile",
+    "h_pylori": "H. pylori",
+    # Diarrheagenic E. coli
+    "eaec_aaic": "EAEC (aaiC)",
+    "eaec_aata": "EAEC (aatA)",
+    "epec_eae": "EPEC (eae)",
+    "epec_bfpa": "EPEC (bfpA)",
+    "etec_lt": "ETEC (LT)",
+    "etec_sth": "ETEC (STh)",
+    "etec_stp": "ETEC (STp)",
+    "stec_stx1": "STEC (stx1)",
+    "stec_stx2": "STEC (stx2)",
+    # Viruses
+    "rotavirus": "Rotavirus",
+    "norovirus_gi": "Norovirus GI",
+    "norovirus_gii": "Norovirus GII",
+    "adenovirus_40_41": "Adenovirus 40/41",
+    "astrovirus": "Astrovirus",
+    "sapovirus_i_ii_iv": "Sapovirus",
+    # Parasites
+    "giardia": "Giardia",
+    "cryptosporidium": "Cryptosporidium",
+    "e_histolytica": "E. histolytica",
+    "cyclospora": "Cyclospora",
+    "isospora": "Isospora",
+    # Helminths
+    "ascaris": "Ascaris",
+    "ancylostoma": "Ancylostoma",
+    "necator": "Necator",
+    "strongyloides": "Strongyloides",
+    "trichuris": "Trichuris",
+}
+
+CT_POSITIVE_THRESHOLD = 35  # Ct < 35 = detected
+
+
+def build_tac_pathogens(df):
+    """
+    Long format TAC pathogen panel: study_id x timepoint x pathogen.
+
+    Each row has: study_id, arm, timepoint, specimen_type, pathogen, pathogen_label,
+    category, ct_value, detected (bool), and a pathogen_count (total detected per sample).
+    """
+    # Pathogen categories
+    categories = {}
+    for p in CLINICAL_PATHOGENS:
+        if p.startswith(("campylobacter", "salmonella", "shigella", "aeromonas",
+                         "plesiomonas", "v_cholerae", "c_difficile", "h_pylori")):
+            categories[p] = "Bacteria"
+        elif p.startswith(("eaec", "epec", "etec", "stec")):
+            categories[p] = "Diarrheagenic E. coli"
+        elif p in ("rotavirus", "norovirus_gi", "norovirus_gii",
+                   "adenovirus_40_41", "astrovirus", "sapovirus_i_ii_iv"):
+            categories[p] = "Virus"
+        elif p in ("giardia", "cryptosporidium", "e_histolytica",
+                   "cyclospora", "isospora"):
+            categories[p] = "Parasite"
+        elif p in ("ascaris", "ancylostoma", "necator", "strongyloides", "trichuris"):
+            categories[p] = "Helminth"
+        else:
+            categories[p] = "Other"
+
+    records = []
+    for raw_tp, (clean_tp, specimen) in BIOMARKER_TIMEPOINTS.items():
+        for pathogen, label in CLINICAL_PATHOGENS.items():
+            col = f"{raw_tp} TAC - {pathogen}"
+            if col not in df.columns:
+                continue
+
+            ct = coerce_numeric(df[col])
+            # Only include rows where Ct was measured (not all NaN)
+            mask = ct.notna()
+            if mask.sum() == 0:
+                continue
+
+            sub = pd.DataFrame({
+                "study_id": df.loc[mask, "Study ID"],
+                "arm": df.loc[mask, "ARM"],
+                "timepoint": clean_tp,
+                "specimen_type": specimen,
+                "pathogen": pathogen,
+                "pathogen_label": label,
+                "category": categories.get(pathogen, "Other"),
+                "ct_value": ct[mask],
+                "detected": ct[mask] < CT_POSITIVE_THRESHOLD,
+            })
+            records.append(sub)
+
+    if not records:
+        print("  WARNING: No TAC data found")
+        return pd.DataFrame()
+
+    long = pd.concat(records, ignore_index=True)
+
+    # Add pathogen_count: total pathogens detected per person per timepoint
+    counts = (
+        long[long["detected"]]
+        .groupby(["study_id", "timepoint", "specimen_type"])
+        .size()
+        .reset_index(name="pathogen_count")
+    )
+    long = long.merge(counts, on=["study_id", "timepoint", "specimen_type"], how="left")
+    long["pathogen_count"] = long["pathogen_count"].fillna(0).astype(int)
+
+    # Sort chronologically
+    long["timepoint"] = pd.Categorical(long["timepoint"], categories=TIMEPOINT_ORDER, ordered=True)
+    long = long.sort_values(["study_id", "timepoint", "specimen_type", "pathogen"]).reset_index(drop=True)
+
+    return long
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def print_summary(name, df):
@@ -453,9 +582,30 @@ def main():
     microbiome.to_csv(OUTPUT_DIR / "mumta_microbiome_top_genera.csv", index=False)
     print_summary("mumta_microbiome_top_genera.csv", microbiome)
 
+    # 7. TAC enteric pathogen panel
+    print("\n--- Building TAC pathogen panel ---")
+    tac = build_tac_pathogens(df)
+    tac.to_csv(OUTPUT_DIR / "mumta_tac_pathogens.csv", index=False)
+    print_summary("mumta_tac_pathogens.csv", tac)
+    if not tac.empty:
+        n_tested = tac["study_id"].nunique()
+        n_pathogens = tac["pathogen"].nunique()
+        detection_rate = tac["detected"].mean()
+        print(f"  Participants with TAC data: {n_tested}")
+        print(f"  Pathogen targets: {n_pathogens}")
+        print(f"  Overall detection rate: {detection_rate:.1%}")
+        # Per-timepoint counts
+        for tp in TIMEPOINT_ORDER:
+            sub = tac[tac["timepoint"] == tp]
+            if sub.empty:
+                continue
+            n = sub["study_id"].nunique()
+            det = sub["detected"].mean()
+            print(f"  {tp}: {n} participants, {det:.1%} detection rate")
+
     # Final summary
     print("\n" + "=" * 60)
-    print("  ALL 6 FILES WRITTEN SUCCESSFULLY")
+    print("  ALL 7 FILES WRITTEN SUCCESSFULLY")
     print("=" * 60)
     for f in OUTPUT_FILES:
         path = OUTPUT_DIR / f
