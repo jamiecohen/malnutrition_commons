@@ -82,6 +82,9 @@ try:
     from src.viz.mumta import (
         cohort_overview_metrics,
         birth_outcomes_by_arm,
+        birth_outcomes_by_risk_factor,
+        birth_weight_distribution,
+        adverse_outcome_summary,
         maternal_anemia_trajectory,
         infant_growth_curves,
         binfantis_colonization,
@@ -1023,14 +1026,55 @@ with tab3:
 
         st.markdown("---")
 
-        # ── Section 2: Birth Outcomes ────────────────────────────────────────
+        # ── Section 2: Birth Outcomes by Treatment Arm ────────────────────────
         st.markdown("### Birth Outcomes by Treatment Arm")
         _fig_bo = birth_outcomes_by_arm(_mumta_cohort)
         st.plotly_chart(_fig_bo, use_container_width=True)
 
         st.markdown("---")
 
-        # ── Section 3: Maternal Iron & Anemia ────────────────────────────────
+        # ── Section 3: Birth Outcomes by Maternal Risk Factor ────────────────
+        st.markdown("### Birth Outcomes by Maternal Risk Factor")
+        st.markdown(
+            "How do birth outcomes differ by maternal nutritional status at enrollment? "
+            "Select a risk factor to stratify outcomes."
+        )
+
+        _rf_options = {
+            "Anaemia (Hb < 11 g/dL at 19 weeks)": "anaemia",
+            "BMI category (enrollment)": "bmi",
+            "MUAC status (< 23 cm = malnourished)": "muac",
+            "Iron deficiency (ferritin < 15 ng/mL at 19 weeks)": "iron_deficiency",
+        }
+        _rf_col1, _rf_col2 = st.columns([2, 1])
+        with _rf_col1:
+            _rf_label = st.selectbox(
+                "Risk factor",
+                list(_rf_options.keys()),
+                index=0,
+                key="mumta_rf_sel",
+            )
+        _rf_key = _rf_options[_rf_label]
+
+        # Grouped bar chart: outcome rates by stratum
+        _fig_rf = birth_outcomes_by_risk_factor(_mumta_cohort, risk_factor=_rf_key)
+        st.plotly_chart(_fig_rf, use_container_width=True)
+
+        # Birth weight distribution histogram
+        _fig_bw = birth_weight_distribution(_mumta_cohort, risk_factor=_rf_key)
+        st.plotly_chart(_fig_bw, use_container_width=True)
+
+        # Summary table across all risk factors
+        with st.expander("View summary table — all risk factors"):
+            _rf_table = adverse_outcome_summary(_mumta_cohort)
+            if not _rf_table.empty:
+                st.dataframe(_rf_table, use_container_width=True, hide_index=True)
+            else:
+                st.info("Insufficient data for summary table.")
+
+        st.markdown("---")
+
+        # ── Section 4: Maternal Iron & Anemia ────────────────────────────────
         st.markdown("### Maternal Iron & Anemia Trajectory")
         _anemia_path = _mumta_dir / "mumta_maternal_anemia.csv"
         if _anemia_path.exists():

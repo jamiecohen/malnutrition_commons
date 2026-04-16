@@ -684,3 +684,298 @@ def model_vs_cohort_comparison(cohort_df, snapshot_row, height=300):
         )
 
     return fig
+
+
+# ── Birth outcomes by maternal risk factor ──────────────────────────────────
+
+# Risk-factor color palette
+_RISK_COLORS = {
+    # Anemia status
+    "Anaemic": "#CC3333",
+    "Not anaemic": "#2A9D8F",
+    # BMI categories
+    "Underweight": "#CC3333",
+    "Normal": "#2A9D8F",
+    "Overweight": "#E87722",
+    "Obese": "#7C3AED",
+    # MUAC
+    "Malnourished (<23cm)": "#CC3333",
+    "Adequate (≥23cm)": "#2A9D8F",
+    # Iron deficiency
+    "Iron deficient": "#CC3333",
+    "Iron replete": "#2A9D8F",
+}
+
+_RISK_ORDER = list(_RISK_COLORS.keys())
+
+
+def _wilson_ci(count, n, z=1.96):
+    """Wilson score confidence interval for a proportion."""
+    if n == 0:
+        return 0, 0, 0
+    p = count / n
+    denom = 1 + z**2 / n
+    centre = (p + z**2 / (2 * n)) / denom
+    margin = z * np.sqrt((p * (1 - p) + z**2 / (4 * n)) / n) / denom
+    return centre, max(0, centre - margin), min(1, centre + margin)
+
+
+def birth_outcomes_by_risk_factor(cohort_df, risk_factor="anaemia"):
+    """
+    Grouped bar chart showing birth outcome rates stratified by a maternal risk factor.
+
+    Parameters
+    ----------
+    cohort_df : DataFrame
+        MUMTA cohort summary with columns: birth_outcome, lbw, preterm,
+        stunted_at_birth, wasted_at_birth, and the relevant risk factor columns.
+    risk_factor : str
+        One of: 'anaemia', 'bmi', 'muac', 'iron_deficiency'
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    if _is_empty(cohort_df):
+        return _empty_figure("No cohort data available")
+
+    # Filter to live births for birth outcome analysis
+    live = cohort_df[cohort_df["birth_outcome"].str.contains("live", case=False, na=False)].copy()
+
+    if live.empty:
+        return _empty_figure("No live births in data")
+
+    # Define strata based on risk factor
+    if risk_factor == "anaemia":
+        live["_stratum"] = live["anaemic_19wk"].map({True: "Anaemic", False: "Not anaemic"})
+        title = "Birth Outcomes by Maternal Anaemia Status (19 weeks)"
+    elif risk_factor == "bmi":
+        live["_stratum"] = live["bmi_category"].astype(str)
+        live = live[live["_stratum"] != "nan"]
+        title = "Birth Outcomes by Maternal BMI Category (enrollment)"
+    elif risk_factor == "muac":
+        live["_stratum"] = live["muac_malnourished"].map(
+            {True: "Malnourished (<23cm)", False: "Adequate (≥23cm)"}
+        )
+        title = "Birth Outcomes by Maternal MUAC Status (enrollment)"
+    elif risk_factor == "iron_deficiency":
+        live["_stratum"] = live["iron_deficient_19wk"].map(
+            {True: "Iron deficient", False: "Iron replete"}
+        )
+        title = "Birth Outcomes by Iron Deficiency Status (19 weeks)"
+    else:
+        return _empty_figure(f"Unknown risk factor: {risk_factor}")
+
+    live = live.dropna(subset=["_stratum"])
+
+    outcomes = [
+        ("lbw", "Low birthweight"),
+        ("preterm", "Preterm"),
+        ("stunted_at_birth", "Stunted at birth"),
+        ("wasted_at_birth", "Wasted at birth"),
+    ]
+
+    strata = sorted(live["_stratum"].unique(),
+                    key=lambda x: _RISK_ORDER.index(x) if x in _RISK_ORDER else 99)
+
+    fig = go.Figure()
+
+    for stratum in strata:
+        sub = live[live["_stratum"] == stratum]
+        n_group = len(sub)
+        rates = []
+        ci_lo = []
+        ci_hi = []
+        labels = []
+
+        for col, label in outcomes:
+            count = sub[col].sum()
+            p, lo, hi = _wilson_ci(count, n_group)
+            rates.append(p * 100)
+            ci_lo.append(lo * 100)
+            ci_hi.append(hi * 100)
+            labels.append(label)
+
+        color = _RISK_COLORS.get(stratum, "#999999")
+
+        fig.add_trace(go.Bar(
+            name=f"{stratum} (n={n_group})",
+            x=labels,
+            y=rates,
+            marker_color=color,
+            error_y=dict(
+                type="data",
+                symmetric=False,
+                array=[hi - r for r, hi in zip(rates, ci_hi)],
+                arrayminus=[r - lo for r, lo in zip(rates, ci_lo)],
+                color="#555",
+                thickness=1.5,
+            ),
+            text=[f"{r:.1f}%" for r in rates],
+            textposition="outside",
+            textfont=dict(size=11),
+        ))
+
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=15)),
+        barmode="group",
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        xaxis=dict(showgrid=False),
+        yaxis=dict(
+            title="Prevalence (%)",
+            showgrid=True,
+            gridcolor="#EEEEEE",
+            rangemode="tozero",
+        ),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            font=dict(size=11),
+        ),
+        height=420,
+        margin=dict(l=60, r=40, t=80, b=40),
+        font=FONT,
+    )
+
+    return fig
+
+
+def birth_weight_distribution(cohort_df, risk_factor="anaemia"):
+    """
+    Overlaid histograms of birth weight stratified by a maternal risk factor.
+
+    Parameters
+    ----------
+    cohort_df : DataFrame
+        MUMTA cohort summary with birth_weight_g and risk factor columns.
+    risk_factor : str
+        One of: 'anaemia', 'bmi', 'muac', 'iron_deficiency'
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    if _is_empty(cohort_df):
+        return _empty_figure("No cohort data available")
+
+    live = cohort_df[cohort_df["birth_outcome"].str.contains("live", case=False, na=False)].copy()
+    live = live.dropna(subset=["birth_weight_g"])
+
+    if live.empty:
+        return _empty_figure("No birth weight data available")
+
+    # Define strata
+    if risk_factor == "anaemia":
+        live["_stratum"] = live["anaemic_19wk"].map({True: "Anaemic", False: "Not anaemic"})
+        title = "Birth Weight Distribution by Anaemia Status"
+    elif risk_factor == "bmi":
+        live["_stratum"] = live["bmi_category"].astype(str)
+        live = live[live["_stratum"] != "nan"]
+        title = "Birth Weight Distribution by BMI Category"
+    elif risk_factor == "muac":
+        live["_stratum"] = live["muac_malnourished"].map(
+            {True: "Malnourished (<23cm)", False: "Adequate (≥23cm)"}
+        )
+        title = "Birth Weight Distribution by MUAC Status"
+    elif risk_factor == "iron_deficiency":
+        live["_stratum"] = live["iron_deficient_19wk"].map(
+            {True: "Iron deficient", False: "Iron replete"}
+        )
+        title = "Birth Weight Distribution by Iron Deficiency"
+    else:
+        return _empty_figure(f"Unknown risk factor: {risk_factor}")
+
+    live = live.dropna(subset=["_stratum"])
+
+    strata = sorted(live["_stratum"].unique(),
+                    key=lambda x: _RISK_ORDER.index(x) if x in _RISK_ORDER else 99)
+
+    fig = go.Figure()
+
+    for stratum in strata:
+        sub = live[live["_stratum"] == stratum]
+        color = _RISK_COLORS.get(stratum, "#999999")
+        mean_bw = sub["birth_weight_g"].mean()
+
+        fig.add_trace(go.Histogram(
+            x=sub["birth_weight_g"],
+            name=f"{stratum} (n={len(sub)}, mean={mean_bw:.0f}g)",
+            marker_color=_hex_to_rgba(color, 0.6),
+            marker_line=dict(color=color, width=1),
+            nbinsx=30,
+            opacity=0.7,
+        ))
+
+    # Add LBW threshold line
+    fig.add_vline(
+        x=2500, line_dash="dash", line_color="#CC3333", line_width=2,
+        annotation_text="LBW threshold (2500g)",
+        annotation_position="top left",
+        annotation_font=dict(size=10, color="#CC3333"),
+    )
+
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=15)),
+        barmode="overlay",
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        xaxis=dict(title="Birth weight (g)", showgrid=True, gridcolor="#EEEEEE"),
+        yaxis=dict(title="Count", showgrid=True, gridcolor="#EEEEEE"),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            font=dict(size=11),
+        ),
+        height=400,
+        margin=dict(l=60, r=40, t=80, b=40),
+        font=FONT,
+    )
+
+    return fig
+
+
+def adverse_outcome_summary(cohort_df):
+    """
+    Summary table: adverse birth outcome rates by all maternal risk factors.
+
+    Returns a DataFrame with columns: Risk factor, Group, N, LBW (%), Preterm (%),
+    Stunted (%), Wasted (%), Mean BW (g).
+    """
+    if _is_empty(cohort_df):
+        return pd.DataFrame()
+
+    live = cohort_df[cohort_df["birth_outcome"].str.contains("live", case=False, na=False)].copy()
+
+    strata_defs = {
+        "Anaemia (19wk)": ("anaemic_19wk", {True: "Anaemic", False: "Not anaemic"}),
+        "Anaemia (32wk)": ("anaemic_32wk", {True: "Anaemic", False: "Not anaemic"}),
+        "Iron deficiency (19wk)": ("iron_deficient_19wk", {True: "Iron deficient", False: "Iron replete"}),
+        "BMI category": ("bmi_category", None),
+        "MUAC status": ("muac_malnourished", {True: "Malnourished (<23cm)", False: "Adequate (≥23cm)"}),
+    }
+
+    rows = []
+    for rf_label, (col, mapping) in strata_defs.items():
+        if col not in live.columns:
+            continue
+        if mapping:
+            live["_s"] = live[col].map(mapping)
+        else:
+            live["_s"] = live[col].astype(str)
+            live = live[live["_s"] != "nan"]
+
+        for stratum, sub in live.groupby("_s"):
+            n = len(sub)
+            if n < 10:
+                continue
+            rows.append({
+                "Risk factor": rf_label,
+                "Group": stratum,
+                "N": n,
+                "LBW (%)": f"{sub['lbw'].mean() * 100:.1f}",
+                "Preterm (%)": f"{sub['preterm'].mean() * 100:.1f}",
+                "Stunted (%)": f"{sub['stunted_at_birth'].mean() * 100:.1f}",
+                "Wasted (%)": f"{sub['wasted_at_birth'].mean() * 100:.1f}",
+                "Mean BW (g)": f"{sub['birth_weight_g'].mean():.0f}",
+            })
+
+    return pd.DataFrame(rows)

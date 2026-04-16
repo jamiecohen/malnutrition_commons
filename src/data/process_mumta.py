@@ -122,6 +122,22 @@ def build_cohort_summary(df):
     out["stunted_at_birth"] = coerce_numeric(df["zlen_6a_F0"]) < -2
     out["wasted_at_birth"] = coerce_numeric(df["zwfl_6a_F0"]) < -2
 
+    # Maternal anthropometry (enrollment)
+    out["height_cm"] = coerce_numeric(df["Woman_Height"])
+    out["weight_kg"] = coerce_numeric(df["Current weight of the PW in Kg (6a)"])
+    out["muac_cm"] = coerce_numeric(df["Current MUAC of the PW in cm (6a)"])
+    out["bmi"] = coerce_numeric(df["BMI_6a"])
+
+    # BMI category
+    out["bmi_category"] = pd.cut(
+        out["bmi"],
+        bins=[0, 18.5, 25, 30, 100],
+        labels=["Underweight", "Normal", "Overweight", "Obese"],
+        right=False,
+    )
+    # MUAC malnourished flag (<23 cm is standard cutoff for pregnant women)
+    out["muac_malnourished"] = out["muac_cm"] < 23
+
     # Micronutrients
     out["hb_19wk"] = coerce_numeric(df["TP_1_PW_Hb_g_dL"])
     out["ferritin_19wk"] = coerce_numeric(df["TP_1_Ferritin_ng_mL"])
