@@ -659,3 +659,364 @@ def tac_cross_cohort_comparison(amanhi_tac_df, mumta_tac_df=None):
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     return fig
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SECTION 4 (Tier 2): B. infantis + B. longum vs growth trajectories
+# ═════════════════════════════════════════════════════════════════════════════
+
+def growth_trajectory_by_binfantis(neonatal_df):
+    """Slopegraph: mean HAZ from birth → 6 months by B. infantis status, all 3 countries.
+
+    Shows whether B. infantis-colonized neonates experience less growth faltering.
+    """
+    if neonatal_df is None or neonatal_df.empty:
+        return _empty_figure("No neonatal data")
+
+    df = neonatal_df.dropna(subset=["binfantis_positive", "haz1", "haz6"]).copy()
+    df["bi"] = df["binfantis_positive"].astype(bool)
+
+    sites = ["PAK", "BGD", "TZA"]
+    fig = make_subplots(
+        rows=1, cols=3,
+        subplot_titles=[SITE_LABELS.get(s, s) for s in sites],
+        shared_yaxes=True,
+    )
+
+    for col_idx, site in enumerate(sites, 1):
+        sub = df[df["site"] == site]
+        for status, color, dash, label in [
+            (True, "#2A9D8F", "solid", "B. infantis +"),
+            (False, "#E76F51", "dash", "B. infantis −"),
+        ]:
+            grp = sub[sub["bi"] == status]
+            n = len(grp)
+            if n == 0:
+                continue
+            mean_birth = grp["haz1"].mean()
+            mean_6mo = grp["haz6"].mean()
+            delta = mean_6mo - mean_birth
+
+            fig.add_trace(go.Scatter(
+                x=["Birth", "6 months"],
+                y=[mean_birth, mean_6mo],
+                mode="lines+markers+text",
+                line=dict(color=color, width=2.5, dash=dash),
+                marker=dict(size=10, color=color),
+                text=[f"{mean_birth:.2f}", f"{mean_6mo:.2f}"],
+                textposition="top center",
+                name=f"{label} (n={n}, Δ={delta:+.2f})",
+                legendgroup=label,
+                showlegend=(col_idx == 1),
+                hovertemplate=(
+                    f"<b>{label}</b> (n={n})<br>"
+                    "%{x}: HAZ = %{y:.2f}<extra></extra>"
+                ),
+            ), row=1, col=col_idx)
+
+        # Add stunting threshold
+        fig.add_hline(y=-2, line_dash="dot", line_color="#ccc", line_width=1,
+                      row=1, col=col_idx)
+
+    fig.update_layout(
+        title=dict(text="Growth Trajectory (HAZ): Birth → 6 Months by B. infantis Status"),
+        plot_bgcolor="white", paper_bgcolor="white",
+        height=450, font=FONT,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+    )
+    fig.update_yaxes(title_text="HAZ (z-score)", row=1, col=1)
+    for i in range(1, 4):
+        fig.update_yaxes(range=[-2.5, 0.5], row=1, col=i)
+    return fig
+
+
+def growth_trajectory_by_blongum(neonatal_df):
+    """Slopegraph: mean HAZ from birth → 6 months by B. longum status, all 3 countries."""
+    if neonatal_df is None or neonatal_df.empty:
+        return _empty_figure("No neonatal data")
+
+    df = neonatal_df.dropna(subset=["blongum_positive", "haz1", "haz6"]).copy()
+    df["bl"] = df["blongum_positive"].astype(bool)
+
+    sites = ["PAK", "BGD", "TZA"]
+    fig = make_subplots(
+        rows=1, cols=3,
+        subplot_titles=[SITE_LABELS.get(s, s) for s in sites],
+        shared_yaxes=True,
+    )
+
+    for col_idx, site in enumerate(sites, 1):
+        sub = df[df["site"] == site]
+        for status, color, dash, label in [
+            (True, "#264653", "solid", "B. longum +"),
+            (False, "#E9C46A", "dash", "B. longum −"),
+        ]:
+            grp = sub[sub["bl"] == status]
+            n = len(grp)
+            if n == 0:
+                continue
+            mean_birth = grp["haz1"].mean()
+            mean_6mo = grp["haz6"].mean()
+            delta = mean_6mo - mean_birth
+
+            fig.add_trace(go.Scatter(
+                x=["Birth", "6 months"],
+                y=[mean_birth, mean_6mo],
+                mode="lines+markers+text",
+                line=dict(color=color, width=2.5, dash=dash),
+                marker=dict(size=10, color=color),
+                text=[f"{mean_birth:.2f}", f"{mean_6mo:.2f}"],
+                textposition="top center",
+                name=f"{label} (n={n}, Δ={delta:+.2f})",
+                legendgroup=label,
+                showlegend=(col_idx == 1),
+            ), row=1, col=col_idx)
+
+        fig.add_hline(y=-2, line_dash="dot", line_color="#ccc", line_width=1,
+                      row=1, col=col_idx)
+
+    fig.update_layout(
+        title=dict(text="Growth Trajectory (HAZ): Birth → 6 Months by B. longum Status"),
+        plot_bgcolor="white", paper_bgcolor="white",
+        height=450, font=FONT,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+    )
+    fig.update_yaxes(title_text="HAZ (z-score)", row=1, col=1)
+    for i in range(1, 4):
+        fig.update_yaxes(range=[-2.5, 0.5], row=1, col=i)
+    return fig
+
+
+def growth_by_colonization_group(neonatal_df, site="PAK"):
+    """Box plots of growth faltering (ΔHAZ birth→6mo) by 4-group colonization status.
+
+    Groups: Both (B.inf+ & B.long+), B.inf only, B.long only, Neither.
+    """
+    if neonatal_df is None or neonatal_df.empty:
+        return _empty_figure("No neonatal data")
+
+    df = neonatal_df[neonatal_df["site"] == site].copy()
+    df = df.dropna(subset=["binfantis_positive", "blongum_positive", "haz1", "haz6"])
+    if len(df) < 10:
+        return _empty_figure(f"Insufficient data for {site}")
+
+    bi = df["binfantis_positive"].astype(bool)
+    bl = df["blongum_positive"].astype(bool)
+    df["colon_group"] = "Neither"
+    df.loc[bi & bl, "colon_group"] = "Both B.inf + B.long"
+    df.loc[bi & ~bl, "colon_group"] = "B. infantis only"
+    df.loc[~bi & bl, "colon_group"] = "B. longum only"
+
+    df["delta_haz"] = df["haz6"] - df["haz1"]
+    df["delta_waz"] = df["waz6"] - df["waz1"]
+
+    group_order = ["Both B.inf + B.long", "B. infantis only", "B. longum only", "Neither"]
+    group_colors = {
+        "Both B.inf + B.long": "#264653",
+        "B. infantis only": "#2A9D8F",
+        "B. longum only": "#E9C46A",
+        "Neither": "#E76F51",
+    }
+
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=["ΔHAZ (birth → 6mo)", "ΔWAZ (birth → 6mo)"],
+    )
+
+    for col_idx, (metric, label) in enumerate([("delta_haz", "ΔHAZ"), ("delta_waz", "ΔWAZ")], 1):
+        for grp in group_order:
+            vals = df.loc[df["colon_group"] == grp, metric].dropna()
+            fig.add_trace(go.Box(
+                y=vals,
+                name=f"{grp} (n={len(vals)})",
+                marker_color=group_colors[grp],
+                boxmean=True,
+                legendgroup=grp,
+                showlegend=(col_idx == 1),
+            ), row=1, col=col_idx)
+
+    fig.add_hline(y=0, line_dash="dot", line_color="#999", line_width=1, row=1, col=1)
+    fig.add_hline(y=0, line_dash="dot", line_color="#999", line_width=1, row=1, col=2)
+
+    site_label = SITE_LABELS.get(site, site)
+    fig.update_layout(
+        title=dict(text=f"Growth Faltering by Colonization Group — {site_label} (AMANHI)"),
+        plot_bgcolor="white", paper_bgcolor="white",
+        height=450, font=FONT,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5),
+    )
+    fig.update_yaxes(title_text="Change in z-score", row=1, col=1)
+    fig.update_yaxes(title_text="Change in z-score", row=1, col=2)
+    return fig
+
+
+def growth_faltering_cross_country(neonatal_df):
+    """Grouped bar chart: mean ΔHAZ by B. infantis status across all 3 countries.
+
+    Shows whether the B. infantis–growth relationship is consistent or site-specific.
+    """
+    if neonatal_df is None or neonatal_df.empty:
+        return _empty_figure("No neonatal data")
+
+    df = neonatal_df.dropna(subset=["binfantis_positive", "haz1", "haz6"]).copy()
+    df["bi"] = df["binfantis_positive"].astype(bool)
+    df["delta_haz"] = df["haz6"] - df["haz1"]
+
+    sites = ["PAK", "BGD", "TZA"]
+    fig = go.Figure()
+
+    for status, color, label in [
+        (True, "#2A9D8F", "B. infantis +"),
+        (False, "#E76F51", "B. infantis −"),
+    ]:
+        means, sems, labels_x, ns = [], [], [], []
+        for site in sites:
+            grp = df[(df["site"] == site) & (df["bi"] == status)]
+            n = len(grp)
+            if n == 0:
+                continue
+            d = grp["delta_haz"]
+            means.append(d.mean())
+            sems.append(d.std() / np.sqrt(n))
+            labels_x.append(f"{SITE_LABELS[site]}<br>(n={n})")
+            ns.append(n)
+
+        fig.add_trace(go.Bar(
+            x=labels_x, y=means,
+            error_y=dict(type="data", array=sems, visible=True),
+            marker_color=color,
+            name=label,
+            text=[f"{m:+.2f}" for m in means],
+            textposition="outside",
+        ))
+
+    fig.add_hline(y=0, line_dash="dot", line_color="#999", line_width=1)
+
+    fig.update_layout(
+        title=dict(text="Growth Faltering (ΔHAZ birth→6mo) by B. infantis Status"),
+        yaxis=dict(title="Mean ΔHAZ ± SE", range=[-1.3, 0.3]),
+        barmode="group",
+        plot_bgcolor="white", paper_bgcolor="white",
+        height=420, font=FONT,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
+    return fig
+
+
+def binfantis_dose_response(neonatal_df, site="PAK"):
+    """Scatter: B. infantis Ct value (bacterial load proxy) vs HAZ at 6 months.
+
+    Among B.inf+ neonates only. Lower Ct = higher bacterial load.
+    """
+    if neonatal_df is None or neonatal_df.empty:
+        return _empty_figure("No neonatal data")
+
+    df = neonatal_df[
+        (neonatal_df["site"] == site) &
+        (neonatal_df["binfantis_positive"] == True)  # noqa: E712
+    ].dropna(subset=["binfantis_ct", "haz6"]).copy()
+
+    if len(df) < 10:
+        return _empty_figure(f"Insufficient B.inf+ data for {SITE_LABELS.get(site, site)}")
+
+    # Compute correlation
+    corr_text = f"n = {len(df)}"
+    try:
+        from scipy.stats import spearmanr
+        r, p = spearmanr(df["binfantis_ct"], df["haz6"])
+        corr_text = f"n = {len(df)}, Spearman r = {r:.3f}, p = {p:.3f}"
+    except ImportError:
+        pass
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df["binfantis_ct"], y=df["haz6"],
+        mode="markers",
+        marker=dict(size=7, color="#2A9D8F", opacity=0.6),
+        hovertemplate="Ct: %{x:.1f}<br>HAZ 6mo: %{y:.2f}<extra></extra>",
+    ))
+
+    # Add trend line
+    z = np.polyfit(df["binfantis_ct"], df["haz6"], 1)
+    x_range = np.linspace(df["binfantis_ct"].min(), df["binfantis_ct"].max(), 50)
+    fig.add_trace(go.Scatter(
+        x=x_range, y=np.polyval(z, x_range),
+        mode="lines", line=dict(color="#E76F51", dash="dash", width=2),
+        name="Trend", showlegend=False,
+    ))
+
+    site_label = SITE_LABELS.get(site, site)
+    fig.update_layout(
+        title=dict(text=f"B. infantis Load (Ct) vs HAZ at 6 Months — {site_label} (B.inf+ only)"),
+        xaxis=dict(title="B. infantis Ct value (lower = more bacteria)"),
+        yaxis=dict(title="HAZ at 6 months"),
+        plot_bgcolor="white", paper_bgcolor="white",
+        height=420, font=FONT, showlegend=False,
+        annotations=[dict(
+            text=corr_text,
+            xref="paper", yref="paper", x=0.02, y=0.98,
+            showarrow=False, font=dict(size=12, color="#666"),
+            bgcolor="rgba(255,255,255,0.8)",
+        )],
+    )
+    return fig
+
+
+def growth_trajectory_waz(neonatal_df):
+    """Slopegraph: mean WAZ from birth → 6 months by B. infantis status, all 3 countries.
+
+    Parallel to HAZ trajectory but using weight-for-age instead of length-for-age.
+    """
+    if neonatal_df is None or neonatal_df.empty:
+        return _empty_figure("No neonatal data")
+
+    df = neonatal_df.dropna(subset=["binfantis_positive", "waz1", "waz6"]).copy()
+    df["bi"] = df["binfantis_positive"].astype(bool)
+
+    sites = ["PAK", "BGD", "TZA"]
+    fig = make_subplots(
+        rows=1, cols=3,
+        subplot_titles=[SITE_LABELS.get(s, s) for s in sites],
+        shared_yaxes=True,
+    )
+
+    for col_idx, site in enumerate(sites, 1):
+        sub = df[df["site"] == site]
+        for status, color, dash, label in [
+            (True, "#2A9D8F", "solid", "B. infantis +"),
+            (False, "#E76F51", "dash", "B. infantis −"),
+        ]:
+            grp = sub[sub["bi"] == status]
+            n = len(grp)
+            if n == 0:
+                continue
+            mean_birth = grp["waz1"].mean()
+            mean_6mo = grp["waz6"].mean()
+            delta = mean_6mo - mean_birth
+
+            fig.add_trace(go.Scatter(
+                x=["Birth", "6 months"],
+                y=[mean_birth, mean_6mo],
+                mode="lines+markers+text",
+                line=dict(color=color, width=2.5, dash=dash),
+                marker=dict(size=10, color=color),
+                text=[f"{mean_birth:.2f}", f"{mean_6mo:.2f}"],
+                textposition="top center",
+                name=f"{label} (n={n}, Δ={delta:+.2f})",
+                legendgroup=label,
+                showlegend=(col_idx == 1),
+            ), row=1, col=col_idx)
+
+        fig.add_hline(y=-2, line_dash="dot", line_color="#ccc", line_width=1,
+                      row=1, col=col_idx)
+
+    fig.update_layout(
+        title=dict(text="Weight Trajectory (WAZ): Birth → 6 Months by B. infantis Status"),
+        plot_bgcolor="white", paper_bgcolor="white",
+        height=450, font=FONT,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+    )
+    fig.update_yaxes(title_text="WAZ (z-score)", row=1, col=1)
+    for i in range(1, 4):
+        fig.update_yaxes(range=[-2.5, 0.5], row=1, col=i)
+    return fig

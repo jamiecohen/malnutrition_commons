@@ -120,6 +120,13 @@ try:
         tac_top_pathogens as amanhi_tac_top_pathogens,
         tac_pathogen_burden_vs_outcomes as amanhi_tac_burden_vs_outcomes,
         tac_cross_cohort_comparison as amanhi_tac_cross_cohort,
+        # Tier 2
+        growth_trajectory_by_binfantis as amanhi_growth_traj_binfantis,
+        growth_trajectory_by_blongum as amanhi_growth_traj_blongum,
+        growth_by_colonization_group as amanhi_growth_by_colon_group,
+        growth_faltering_cross_country as amanhi_growth_faltering_xc,
+        binfantis_dose_response as amanhi_binfantis_dose_response,
+        growth_trajectory_waz as amanhi_growth_traj_waz,
     )
     _AMANHI_VIZ_AVAILABLE = True
 except Exception as _amanhi_err:
@@ -1202,6 +1209,87 @@ with tab3:
                         "worse birth outcomes? Total number of detected pathogens per mother "
                         "compared across outcome groups."
                     )
+
+                st.markdown("---")
+
+            # ── Section 4: B. infantis + B. longum vs Growth Trajectories ────
+            st.markdown("### B. infantis & B. longum vs Growth Trajectories")
+            st.markdown(
+                "AMANHI uniquely links neonatal microbiome status to anthropometry at both "
+                "**birth and 6 months** across three countries — enabling us to test whether "
+                "B. infantis or B. longum colonization protects against growth faltering. "
+                "All 729 neonates have both timepoints."
+            )
+
+            _am_growth_view = st.radio(
+                "Growth trajectory view",
+                ["HAZ by B. infantis", "WAZ by B. infantis", "HAZ by B. longum",
+                 "Colonization groups", "Cross-country faltering", "Dose-response (Ct)"],
+                horizontal=True, key="amanhi_growth_view",
+            )
+
+            if _am_growth_view == "HAZ by B. infantis":
+                st.plotly_chart(amanhi_growth_traj_binfantis(_amanhi_neo), use_container_width=True)
+                st.warning(
+                    "**Counter-intuitive finding**: In Pakistan and Tanzania, B. infantis+ neonates "
+                    "show *steeper* growth faltering (larger ΔHAZ decline) than B. infantis− neonates. "
+                    "Bangladesh shows a different pattern — B. infantis+ infants maintain their HAZ "
+                    "while B. infantis− infants decline. This cross-country inconsistency suggests "
+                    "confounding rather than a direct causal effect. Possible confounders include "
+                    "breastfeeding patterns, SES, delivery mode, and environmental exposures."
+                )
+            elif _am_growth_view == "WAZ by B. infantis":
+                st.plotly_chart(amanhi_growth_traj_waz(_amanhi_neo), use_container_width=True)
+                st.info(
+                    "**Weight trajectory**: WAZ (weight-for-age) patterns parallel HAZ — "
+                    "B. infantis+ neonates show more weight faltering in Pakistan and Tanzania. "
+                    "The consistent HAZ/WAZ pattern suggests an underlying confounder affecting "
+                    "overall growth, not just linear growth."
+                )
+            elif _am_growth_view == "HAZ by B. longum":
+                st.plotly_chart(amanhi_growth_traj_blongum(_amanhi_neo), use_container_width=True)
+                st.info(
+                    "**B. longum trajectory**: Similar counter-intuitive pattern — B. longum+ "
+                    "neonates show steeper growth faltering in Pakistan and Tanzania. "
+                    "This reinforces the confounding interpretation: colonization with *any* "
+                    "Bifidobacterium species tracks with worse growth in these settings."
+                )
+            elif _am_growth_view == "Colonization groups":
+                _am_site_map = {"PAK": "Pakistan", "BGD": "Bangladesh", "TZA": "Tanzania"}
+                _am_colon_site = st.selectbox(
+                    "Site", ["PAK", "BGD", "TZA"],
+                    format_func=lambda s: _am_site_map.get(s, s),
+                    key="amanhi_colon_site",
+                )
+                st.plotly_chart(amanhi_growth_by_colon_group(_amanhi_neo, _am_colon_site), use_container_width=True)
+                st.info(
+                    "**4-group analysis**: Separating by co-colonization status (Both, B.inf only, "
+                    "B.long only, Neither). The 'Neither' group in Pakistan actually shows the "
+                    "*least* growth faltering — again suggesting the relationship is driven by "
+                    "confounding factors associated with colonization in this environment."
+                )
+            elif _am_growth_view == "Cross-country faltering":
+                st.plotly_chart(amanhi_growth_faltering_xc(_amanhi_neo), use_container_width=True)
+                st.info(
+                    "**Cross-country comparison**: Mean ΔHAZ (birth→6mo) with standard error bars. "
+                    "The direction and magnitude of the B. infantis–growth association varies "
+                    "substantially across countries. In Bangladesh, B. infantis+ infants show *less* "
+                    "faltering; in Pakistan and Tanzania, *more*. This heterogeneity argues against "
+                    "a simple protective mechanism and for site-specific confounding."
+                )
+            else:  # Dose-response
+                _am_dose_site = st.selectbox(
+                    "Site", ["PAK", "BGD", "TZA"],
+                    format_func=lambda s: {"PAK": "Pakistan", "BGD": "Bangladesh", "TZA": "Tanzania"}.get(s, s),
+                    key="amanhi_dose_site",
+                )
+                st.plotly_chart(amanhi_binfantis_dose_response(_amanhi_neo, _am_dose_site), use_container_width=True)
+                st.info(
+                    "**Dose-response**: Among B. infantis+ neonates, does higher bacterial load "
+                    "(lower Ct value) predict better or worse growth at 6 months? A negative "
+                    "Spearman r would mean more bacteria → worse HAZ; positive r → better HAZ. "
+                    "This tests whether the counter-intuitive finding holds even within colonized infants."
+                )
 
         st.markdown("---")
         st.markdown(
