@@ -307,11 +307,11 @@ def crp_distribution(bioanalytes_df):
         marker_color="#2A9D8F", opacity=0.8,
         name="CRP distribution",
     ))
-    fig.add_vline(x=0.5, line_dash="dash", line_color="#E76F51", line_width=2,
-                  annotation_text="Elevated (>0.5 mg/dL)", annotation_position="top right")
+    fig.add_vline(x=1.9, line_dash="dash", line_color="#E76F51", line_width=2,
+                  annotation_text="Elevated (>1.9 mg/dL, WHO/BRINDA 2020)", annotation_position="top right")
 
     n_total = len(crp)
-    n_elevated = (crp > 0.5).sum()
+    n_elevated = (crp > 1.9).sum()
     fig.update_layout(
         title=dict(text=f"Maternal CRP Distribution — Pakistan (n={n_total}, {n_elevated/n_total:.0%} elevated)"),
         xaxis=dict(title="CRP (mg/dL)"),
@@ -337,13 +337,13 @@ def ferritin_distribution(bioanalytes_df):
         marker_color="#E87722", opacity=0.8,
         name="Ferritin distribution",
     ))
-    fig.add_vline(x=15, line_dash="dash", line_color="#E76F51", line_width=2,
-                  annotation_text="Iron deficient (<15 ng/mL)", annotation_position="top right")
+    fig.add_vline(x=30, line_dash="dash", line_color="#E76F51", line_width=2,
+                  annotation_text="Iron deficient at delivery (<30 ng/mL)", annotation_position="top right")
 
     n_total = len(fer)
-    n_deficient = (fer < 15).sum()
+    n_deficient = (fer < 30).sum()
     fig.update_layout(
-        title=dict(text=f"Maternal Ferritin — Pakistan (n={n_total}, {n_deficient/n_total:.0%} iron deficient)"),
+        title=dict(text=f"Maternal Ferritin — Pakistan (n={n_total}, {n_deficient/n_total:.0%} iron deficient at delivery)"),
         xaxis=dict(title="Ferritin (ng/mL)"),
         yaxis=dict(title="Count"),
         plot_bgcolor="white", paper_bgcolor="white",
@@ -373,8 +373,8 @@ def crp_vs_birth_outcomes(bioanalytes_df, neonatal_df):
     fig = go.Figure()
 
     for elevated, color, label in [
-        (False, "#2A9D8F", "CRP Normal (≤0.5)"),
-        (True, "#E76F51", "CRP Elevated (>0.5)"),
+        (False, "#2A9D8F", "CRP Normal (≤1.9 mg/dL)"),
+        (True, "#E76F51", "CRP Elevated (>1.9 mg/dL)"),
     ]:
         grp = merged[merged["crp_elevated"] == elevated]
         rates, los, his, xs = [], [], [], []
@@ -424,8 +424,8 @@ def ferritin_vs_birth_outcomes(bioanalytes_df, neonatal_df):
     fig = go.Figure()
 
     for deficient, color, label in [
-        (False, "#2A9D8F", "Iron Replete (≥15)"),
-        (True, "#E76F51", "Iron Deficient (<15)"),
+        (False, "#2A9D8F", "Iron Replete (≥30 ng/mL)"),
+        (True, "#E76F51", "Iron Deficient (<30 ng/mL)"),
     ]:
         grp = merged[merged["iron_deficient"] == deficient]
         rates, los, his, xs = [], [], [], []
@@ -477,10 +477,10 @@ def crp_ferritin_scatter(bioanalytes_df):
     ))
 
     # Reference lines
-    fig.add_hline(y=15, line_dash="dash", line_color="#E76F51", line_width=1.5,
-                  annotation_text="Iron deficient", annotation_position="bottom right")
-    fig.add_vline(x=0.5, line_dash="dash", line_color="#999", line_width=1.5,
-                  annotation_text="CRP elevated", annotation_position="top left")
+    fig.add_hline(y=30, line_dash="dash", line_color="#E76F51", line_width=1.5,
+                  annotation_text="Iron deficient at delivery (<30 ng/mL)", annotation_position="bottom right")
+    fig.add_vline(x=1.9, line_dash="dash", line_color="#999", line_width=1.5,
+                  annotation_text="CRP elevated (>1.9 mg/dL)", annotation_position="top left")
 
     # Quadrant labels
     fig.add_annotation(x=0.15, y=5, text="Iron deficient<br>No inflammation",

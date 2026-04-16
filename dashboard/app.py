@@ -1161,18 +1161,18 @@ with tab3:
                 if _am_bio_view == "CRP distribution":
                     st.plotly_chart(amanhi_crp_distribution(_amanhi_bio), use_container_width=True)
                     st.info(
-                        "**Key finding**: 47% of pregnant women have elevated CRP (>0.5 mg/dL), "
-                        "indicating widespread subclinical inflammation in this Pakistani population. "
-                        "Elevated CRP during pregnancy is associated with adverse birth outcomes "
-                        "and may confound ferritin-based iron deficiency assessment."
+                        "**Key finding**: 6.4% of women have elevated CRP (>1.9 mg/dL, WHO/BRINDA 2020 "
+                        "threshold for pregnant women). Although a minority, systemic inflammation during "
+                        "pregnancy is associated with adverse birth outcomes and can falsely elevate "
+                        "ferritin, masking underlying iron deficiency."
                     )
                 elif _am_bio_view == "Ferritin distribution":
                     st.plotly_chart(amanhi_ferritin_distribution(_amanhi_bio), use_container_width=True)
                     st.info(
-                        "**Key finding**: 70% of women are iron deficient (ferritin <15 ng/mL). "
-                        "However, ferritin is an acute-phase reactant — in the presence of "
-                        "inflammation (47% have elevated CRP), some women classified as iron "
-                        "replete may actually be iron deficient with falsely elevated ferritin."
+                        "**Key finding**: 86% of women are iron deficient at delivery (ferritin <30 ng/mL). "
+                        "The higher threshold (vs. the standard 15 ng/mL for non-pregnant women) is "
+                        "recommended at delivery because ferritin is an acute-phase reactant — "
+                        "inflammation near delivery can falsely elevate ferritin, masking iron deficiency."
                     )
                 elif _am_bio_view == "CRP vs Ferritin":
                     st.plotly_chart(amanhi_crp_ferritin_scatter(_amanhi_bio), use_container_width=True)
@@ -1192,7 +1192,7 @@ with tab3:
                 else:
                     st.plotly_chart(amanhi_ferritin_vs_birth_outcomes(_amanhi_bio, _amanhi_neo), use_container_width=True)
                     st.info(
-                        "**Note**: Iron deficiency (ferritin <15 ng/mL) vs birth outcomes. "
+                        "**Note**: Iron deficiency (ferritin <30 ng/mL at delivery) vs birth outcomes. "
                         "This direct biomarker–outcome link is one of the unique contributions "
                         "of the AMANHI dataset to the commons."
                     )
