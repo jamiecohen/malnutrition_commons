@@ -92,8 +92,9 @@ try:
         ARM_LABELS as MUMTA_ARM_LABELS,
     )
     _MUMTA_VIZ_AVAILABLE = True
-except ImportError:
+except Exception as _mumta_err:
     _MUMTA_VIZ_AVAILABLE = False
+    _MUMTA_IMPORT_ERROR = str(_mumta_err)
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -992,10 +993,12 @@ with tab3:
             "in `data/processed/mumta/`."
         )
     elif not _MUMTA_VIZ_AVAILABLE:
+        _err_msg = globals().get("_MUMTA_IMPORT_ERROR", "unknown error")
         st.warning(
-            "MUMTA visualization module not found. Ensure `src/viz/mumta.py` exists "
+            "MUMTA visualization module failed to load. Ensure `src/viz/mumta.py` exists "
             "and exports the required plotting functions."
         )
+        st.code(_err_msg, language="text")
     else:
         # Load MUMTA processed data
         _mumta_cohort = pd.read_csv(_mumta_summary_path)
