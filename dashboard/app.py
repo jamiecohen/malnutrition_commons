@@ -646,8 +646,12 @@ with tab1:
     st.markdown("""
 **Cohort & survey data**
 - **DHS Program** — Subnational survey microdata (Nigeria NDHS 2018)
-- **MUMTA Cohort** — Prospective birth cohort in Matiari, Pakistan (maternal nutrition,
-  birth outcomes, infant growth, microbiome) — see **Deep Dive: Pakistan** tab
+- **MUMTA Cohort** — Multi-arm RCT in Matiari, Sindh, Pakistan (1,884 enrolled;
+  maternal nutrition, birth outcomes, infant growth, B. infantis qPCR, TAC enteropathogens,
+  fecal inflammation markers)
+- **AMANHI Cohort** — WHO multi-country observational study (Pakistan, Bangladesh, Tanzania):
+  neonatal B. infantis/B. longum qPCR (n=729), maternal serum bioanalytes incl. CRP &
+  ferritin (n=1,937), maternal TAC enteropathogen panel (n=107), taxonomic microbiome profiles
     """)
 
     st.markdown("---")
@@ -656,11 +660,25 @@ with tab1:
     st.markdown("### Architecture")
     st.markdown(
         '<div class="context-box">'
-        '<b>Data flow:</b> Raw sources (APIs + CSV exports) '
-        '→ <code>src/data/</code> pull scripts (idempotent) '
-        '→ <code>data/processed/</code> harmonized CSVs (ISO3 + year indexed) '
-        '→ Indicator framework (33 indicators, 7 domains) '
+        '<b>Data flow:</b> Raw sources (APIs + CSV exports + cohort data) '
+        '→ <code>src/data/</code> pull & process scripts (idempotent) '
+        '→ <code>data/processed/</code> harmonized CSVs (ISO3 + year indexed; '
+        'cohort-level CSVs for MUMTA & AMANHI) '
+        '→ Indicator framework (33 global indicators, 7 domains + cohort-level microbiome/biomarker data) '
         '→ Query layer (this dashboard + static exports for slides)'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("")
+    st.markdown(
+        '<div class="context-box">'
+        '<b>Two data tiers:</b><br>'
+        '① <b>Global ecological</b> — 226 countries × 33 indicators from modelled estimates '
+        '(WHO, GBD, UNICEF, World Bank, FAO). Enables geographic targeting and cross-indicator analysis.<br>'
+        '② <b>Cohort ground-truth</b> — Individual-level data from MUMTA (Pakistan RCT, n=1,884) '
+        'and AMANHI (3-country observational, n=729 neonates + 1,937 bioanalytes). '
+        'Provides causal evidence and biomarker resolution not available in global estimates.'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -679,9 +697,9 @@ with tab1:
     with _geo_col1:
         st.markdown(
             "**🇵🇰 Pakistan**  \n"
-            "MUMTA cohort site (Matiari). MNCNH alignment. "
-            "Cohort-level ground truth for maternal nutrition, "
-            "birth outcomes, and infant microbiome."
+            "Two cohort datasets: **MUMTA** (Matiari RCT) and **AMANHI** "
+            "(Karachi observational). Richest data overlap: maternal nutrition, "
+            "birth outcomes, infant microbiome, serum biomarkers, enteropathogens."
         )
     with _geo_col2:
         st.markdown(

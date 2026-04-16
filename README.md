@@ -9,12 +9,14 @@ A harmonized, queryable data landscape bringing together micronutrient deficienc
 ## What's Been Built
 
 ### Data pipeline
-Six source-specific pull scripts ingest and harmonize data from public APIs and bulk downloads into a common country–year format. Running `python src/data/pull_data.py` reproduces the full dataset from scratch.
+Eight source-specific pull/process scripts ingest and harmonize data from public APIs, bulk downloads, and cohort datasets into analysis-ready formats. Running `python src/data/pull_data.py` reproduces the global dataset from scratch; cohort data is processed separately via `process_mumta.py` and `process_amanhi.py`.
 
 ### Harmonized datasets
 - **`data/processed/commons_snapshot.csv`** — 226 countries × 76 columns; one row per country using the most recent available value (2010–2023 window, with fallback to best available year)
 - **`data/processed/commons_panel.csv`** — 46,011 country–year rows × 44 columns (1960–2024)
 - **`data/processed/population.csv`** — World Bank population estimates for rate normalization
+- **`data/processed/mumta/`** — 7 CSVs from MUMTA cohort (cohort summary, infant growth, maternal anemia, B. infantis, gut inflammation, microbiome, TAC pathogens)
+- **`data/processed/amanhi/`** — 3 CSVs from AMANHI cohort (neonatal B. infantis/B. longum + outcomes, maternal bioanalytes, maternal TAC pathogens)
 
 ### Indicators (33 numeric, 7 domains)
 
@@ -44,8 +46,12 @@ malnutrition_commons/
 │   │   ├── fao/                # FAO FAOSTAT API pulls
 │   │   ├── lsff/               # FFI 2023 wheat flour fortification
 │   │   ├── gbd/                # IHME GBD (OWID programmatic + manual download)
-│   │   └── outcomes/           # World Bank outcome indicators
+│   │   ├── outcomes/           # World Bank outcome indicators
+│   │   ├── MUMTA/              # MUMTA Pakistan cohort (RCT, xlsx)
+│   │   └── AMANHI/             # AMANHI 3-country cohort (qPCR, bioanalytes, TAC, microbiome)
 │   ├── processed/              # Harmonized, analysis-ready datasets
+│   │   ├── mumta/              # 7 MUMTA analysis CSVs
+│   │   └── amanhi/             # 3 AMANHI analysis CSVs
 │   └── sources.md              # Data source inventory and download instructions
 ├── docs/
 │   ├── architecture.md         # Full data commons architecture and indicator framework
@@ -61,12 +67,14 @@ malnutrition_commons/
 │   │   ├── pull_gbd.py         # GBD micronutrient deficiencies (OWID + manual)
 │   │   ├── pull_outcomes.py    # World Bank outcomes and context
 │   │   ├── pull_dhs_subnational.py  # Nigeria state-level DHS data
-│   │   ├── process_mumta.py    # MUMTA cohort raw data → 6 analysis CSVs
+│   │   ├── process_mumta.py    # MUMTA cohort raw data → 7 analysis CSVs
+│   │   ├── process_amanhi.py   # AMANHI cohort raw data → 3 analysis CSVs
 │   │   └── harmonize.py        # Merges all sources into snapshot + panel
 │   └── viz/
 │       ├── figures.py          # Core chart functions (choropleth, scatter, bar, trend)
 │       ├── insights.py         # Hypothesis-driven cross-indicator analysis (H1–H11)
-│       ├── mumta.py            # MUMTA cohort visualizations (6 chart functions)
+│       ├── mumta.py            # MUMTA cohort visualizations (18 chart functions)
+│       ├── amanhi.py           # AMANHI cohort visualizations (18 chart functions)
 │       └── product_impact.py   # Product-level DALY/cost modelling
 ├── dashboard/
 │   └── app.py                  # Streamlit interactive dashboard
@@ -87,6 +95,8 @@ malnutrition_commons/
 | **FFI / LSFF** | Wheat flour fortification coverage (2023) | Public spreadsheet |
 | **IHME GBD / OWID** | Iron, vitamin A, zinc, iodine deficiency; SGA prevalence | OWID programmatic + manual GBD download (see `docs/gbd_download_guide.md`) |
 | **World Bank** | Under-5/neonatal/maternal mortality, HCI, GDP per capita, food insecurity | Public REST API |
+| **MUMTA Cohort** | Pakistan RCT (n=1,884): birth outcomes, maternal anemia, infant growth, B. infantis qPCR, TAC enteropathogens, fecal MPO/LCN2 | Private cohort data (xlsx) |
+| **AMANHI Cohort** | 3-country observational (PAK/BGD/TZA, n=729 neonates): B. infantis/B. longum qPCR, serum CRP & ferritin, maternal TAC, taxonomic microbiome profiles | WHO AMANHI study data |
 
 ---
 
@@ -110,7 +120,13 @@ The processed datasets ship with the repo, so the dashboard works immediately. T
 # Pull Nigeria state-level data for the subnational tab (DHS API)
 python src/data/pull_dhs_subnational.py
 
-# (Optional) Re-pull all source data from scratch (skips existing files)
+# (Optional) Re-process MUMTA cohort data (requires raw xlsx in data/raw/MUMTA/)
+python src/data/process_mumta.py --force
+
+# (Optional) Re-process AMANHI cohort data (requires raw xlsx in data/raw/AMANHI/)
+python src/data/process_amanhi.py --force
+
+# (Optional) Re-pull all global source data from scratch (skips existing files)
 python src/data/pull_data.py
 
 # (Optional) Re-harmonize into analysis-ready datasets
@@ -129,9 +145,9 @@ This opens the dashboard in your browser at `http://localhost:8501`.
 
 | Tab | What's in it |
 |-----|-------------|
-| **Architecture & Sources** | Data pipeline diagram and source documentation |
+| **Architecture & Sources** | Data pipeline diagram, two-tier architecture (global + cohort), source documentation |
 | **Priority Geographies** | Pakistan, India, Nigeria country profiles with ground-truth survey comparisons and trends |
-| **Deep Dive: Pakistan** | MUMTA cohort data — birth outcomes, maternal anemia, infant growth, B. infantis colonization |
+| **Deep Dive: Pakistan** | Three-cohort view — **MUMTA** (RCT: birth outcomes, anemia, growth, B. infantis, TAC, gut inflammation), **AMANHI** (observational: B. infantis/B. longum across 3 countries, CRP/ferritin bioanalytes, maternal TAC, growth trajectories), and **Cross-Cohort Comparison** (B. infantis rates, pathogen profiles) |
 | **Product Impact** | DALY/cost projections for 5 nutrition products with adjustable parameters |
 | **Nigeria Subnational** | State-level choropleth maps and zone analysis (NDHS 2018) |
 | **Global Context** | Ecological views across 226 countries — choropleth, co-occurrence, causal pathways, country profiles |
@@ -168,10 +184,11 @@ See `docs/insights_summary.md` for full statistical detail, interpretation, and 
 
 Sprint C is a **preview** of the full commons — demonstrating:
 
-1. **Working data pipeline** — 6 sources, 33 indicators, reproducible from scratch
-2. **Integrated cross-indicator analysis** — 11 hypotheses, empirical effect sizes
-3. **Interactive dashboard** — choropleth maps, scatter plots, burden rankings, time series
-4. **Architecture and resourcing plan** — what the full production build requires
+1. **Working data pipeline** — 8 sources (6 global + 2 cohort), 33 global indicators + cohort-level microbiome/biomarker data, reproducible from scratch
+2. **Integrated cross-indicator analysis** — 11 hypotheses, empirical effect sizes across 226 countries
+3. **Cohort ground-truth** — MUMTA (Pakistan RCT, n=1,884) and AMANHI (3-country observational, n=729 neonates) with B. infantis, enteropathogens, CRP/ferritin, and growth trajectory analyses
+4. **Interactive dashboard** — choropleth maps, scatter plots, burden rankings, time series, cohort-level deep dives with cross-cohort comparison
+5. **Architecture and resourcing plan** — what the full production build requires
 
 The full production build (LTE-led, Fall 2026) will add DHS household microdata, near-real-time data refresh, and a formal query API layer.
 
