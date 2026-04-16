@@ -1392,3 +1392,442 @@ def top_pathogens_by_timepoint(tac_df, n_top=10):
     fig.update_yaxes(automargin=True)
 
     return fig
+
+
+# ── B. infantis deep dive ───────────────────────────────────────────────────
+
+_BINF_POS_COLOR = "#2A9D8F"
+_BINF_NEG_COLOR = "#CC3333"
+
+
+def binfantis_colonization_corrected(binfantis_df):
+    """
+    B. infantis colonization trajectory — CORRECTED to show rates among
+    tested participants only, not the full cohort.
+
+    Shows colonization rates over time for maternal and infant specimens,
+    with proper denominator (tested) and sample size annotations.
+
+    Parameters
+    ----------
+    binfantis_df : DataFrame
+        Long-format B. infantis qPCR data with 'tested' column.
+    """
+    if _is_empty(binfantis_df):
+        return _empty_figure("No B. infantis data available")
+
+    df = binfantis_df.copy()
+
+    # Only include tested rows
+    if "tested" not in df.columns:
+        return _empty_figure("B. infantis data missing 'tested' column — re-run process_mumta.py")
+
+    df = df[df["tested"] == True]
+
+    if df.empty:
+        return _empty_figure("No tested B. infantis data")
+
+    fig = go.Figure()
+
+    for specimen, dash in [("maternal", "dot"), ("infant", "solid")]:
+        sub = df[df["specimen_type"] == specimen]
+        if sub.empty:
+            continue
+
+        rates = sub.groupby("timepoint").agg(
+            n_tested=("b_infantis_positive", "count"),
+            n_positive=("b_infantis_positive", "sum"),
+        )
+        # Reorder chronologically
+        rates = rates.reindex([tp for tp in TIMEPOINT_ORDER if tp in rates.index])
+        rates["rate"] = rates["n_positive"] / rates["n_tested"] * 100
+
+        fig.add_trace(go.Scatter(
+            x=rates.index.tolist(),
+            y=rates["rate"],
+            mode="lines+markers+text",
+            name=f"{specimen.capitalize()} (n={int(rates['n_tested'].median())})",
+            line=dict(
+                color=_BINF_POS_COLOR if specimen == "infant" else FOUNDATION_BLUE,
+                width=3 if specimen == "infant" else 2,
+                dash=dash,
+            ),
+            marker=dict(size=8 if specimen == "infant" else 6),
+            text=[f"{r:.0f}%<br>(n={n})" for r, n in zip(rates["rate"], rates["n_tested"])],
+            textposition="top center",
+            textfont=dict(size=9),
+        ))
+
+    fig.update_layout(
+        title=dict(
+            text="B. infantis Colonization Trajectory (among tested participants)",
+            font=dict(size=15),
+        ),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        xaxis=dict(title="Timepoint"),
+        yaxis=dict(
+            title="Colonization rate (%)",
+            showgrid=True, gridcolor="#EEEEEE",
+            range=[0, 105],
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=11)),
+        height=420,
+        margin=dict(l=60, r=40, t=80, b=40),
+        font=FONT,
+    )
+
+    return fig
+
+
+def binfantis_by_arm(binfantis_df):
+    """
+    B. infantis infant colonization rate by treatment arm at each timepoint.
+
+    Parameters
+    ----------
+    binfantis_df : DataFrame
+        Long-format B. infantis qPCR data with 'tested' column.
+    """
+    if _is_empty(binfantis_df):
+        return _empty_figure("No B. infantis data available")
+
+    df = binfantis_df.copy()
+    if "tested" in df.columns:
+        df = df[df["tested"] == True]
+
+    # Infant only
+    df = df[df["specimen_type"] == "infant"]
+    if df.empty:
+        return _empty_figure("No infant B. infantis data")
+
+    fig = go.Figure()
+
+    for arm in ARM_ORDER:
+        sub = df[df["arm"] == arm]
+        if sub.empty:
+            continue
+
+        rates = sub.groupby("timepoint").agg(
+            n_tested=("b_infantis_positive", "count"),
+            n_positive=("b_infantis_positive", "sum"),
+        )
+        rates = rates.reindex([tp for tp in TIMEPOINT_ORDER if tp in rates.index])
+        rates = rates[rates["n_tested"] >= 5]  # Require minimum sample
+        rates["rate"] = rates["n_positive"] / rates["n_tested"] * 100
+
+        fig.add_trace(go.Scatter(
+            x=rates.index.tolist(),
+            y=rates["rate"],
+            mode="lines+markers",
+            name=f"{ARM_LABELS.get(arm, arm)} (n≈{int(rates['n_tested'].median())})",
+            line=dict(color=ARM_COLORS.get(arm, "#999"), width=2.5),
+            marker=dict(size=7),
+            hovertemplate=(
+                f"<b>{ARM_LABELS.get(arm, arm)}</b><br>"
+                "%{x}: %{y:.0f}%<br>"
+                "<extra></extra>"
+            ),
+        ))
+
+    fig.update_layout(
+        title=dict(text="Infant B. infantis Colonization by Treatment Arm", font=dict(size=15)),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        xaxis=dict(title="Timepoint"),
+        yaxis=dict(
+            title="Colonization rate (%)",
+            showgrid=True, gridcolor="#EEEEEE",
+            range=[0, 105],
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=11)),
+        height=400,
+        margin=dict(l=60, r=40, t=80, b=40),
+        font=FONT,
+    )
+
+    return fig
+
+
+def binfantis_vs_pathogens(binfantis_df, tac_df):
+    """
+    Compare pathogen detection rates in B. infantis-positive vs -negative infants.
+
+    Grouped bar chart: for each pathogen with >5% detection, show the detection
+    rate in B. infantis+ vs B. infantis- infants (pooled across timepoints).
+
+    Parameters
+    ----------
+    binfantis_df : DataFrame
+        Long-format B. infantis qPCR data with 'tested' column.
+    tac_df : DataFrame
+        Long-format TAC pathogen data.
+    """
+    if _is_empty(binfantis_df) or _is_empty(tac_df):
+        return _empty_figure("Insufficient data")
+
+    # Get infant B. infantis status (tested only)
+    binf = binfantis_df.copy()
+    if "tested" in binf.columns:
+        binf = binf[binf["tested"] == True]
+    binf = binf[binf["specimen_type"] == "infant"]
+    binf = binf[binf["b_infantis_positive"].notna()]
+
+    # Get infant TAC data
+    tac = tac_df[tac_df["specimen_type"] == "infant"].copy()
+
+    # Merge on study_id + timepoint
+    merged = tac.merge(
+        binf[["study_id", "timepoint", "b_infantis_positive"]],
+        on=["study_id", "timepoint"],
+        how="inner",
+    )
+
+    if merged.empty or len(merged) < 50:
+        return _empty_figure(f"Insufficient overlap (n={len(merged)})")
+
+    # Compute detection rate per pathogen, split by B. infantis status
+    results = []
+    for pathogen_label, grp in merged.groupby("pathogen_label"):
+        pos = grp[grp["b_infantis_positive"] == True]
+        neg = grp[grp["b_infantis_positive"] == False]
+        if len(pos) < 5 or len(neg) < 5:
+            continue
+        pos_rate = pos["detected"].mean() * 100
+        neg_rate = neg["detected"].mean() * 100
+        results.append({
+            "pathogen": pathogen_label,
+            "binf_pos_rate": pos_rate,
+            "binf_neg_rate": neg_rate,
+            "n_pos": len(pos),
+            "n_neg": len(neg),
+            "diff": pos_rate - neg_rate,
+        })
+
+    if not results:
+        return _empty_figure("No pathogens with sufficient data in both groups")
+
+    res_df = pd.DataFrame(results).sort_values("diff")
+
+    # Filter to pathogens with >5% detection in either group
+    res_df = res_df[(res_df["binf_pos_rate"] > 5) | (res_df["binf_neg_rate"] > 5)]
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        name=f"B. infantis + (n≈{int(res_df['n_pos'].median())})",
+        y=res_df["pathogen"],
+        x=res_df["binf_pos_rate"],
+        orientation="h",
+        marker_color=_BINF_POS_COLOR,
+        text=[f"{v:.0f}%" for v in res_df["binf_pos_rate"]],
+        textposition="outside",
+        textfont=dict(size=9),
+    ))
+
+    fig.add_trace(go.Bar(
+        name=f"B. infantis − (n≈{int(res_df['n_neg'].median())})",
+        y=res_df["pathogen"],
+        x=res_df["binf_neg_rate"],
+        orientation="h",
+        marker_color=_BINF_NEG_COLOR,
+        text=[f"{v:.0f}%" for v in res_df["binf_neg_rate"]],
+        textposition="outside",
+        textfont=dict(size=9),
+    ))
+
+    fig.update_layout(
+        title=dict(
+            text="Pathogen Detection: B. infantis+ vs B. infantis− Infants",
+            font=dict(size=15),
+        ),
+        barmode="group",
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        xaxis=dict(
+            title="Detection rate (%)",
+            showgrid=True, gridcolor="#EEEEEE",
+            rangemode="tozero",
+        ),
+        yaxis=dict(automargin=True),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=11)),
+        height=max(400, len(res_df) * 28 + 120),
+        margin=dict(l=160, r=60, t=80, b=40),
+        font=FONT,
+    )
+
+    return fig
+
+
+def binfantis_vs_inflammation(binfantis_df, inflammation_df):
+    """
+    Box plot comparing gut inflammation (MPO) in B. infantis+ vs − infants.
+
+    Parameters
+    ----------
+    binfantis_df : DataFrame
+        Long-format B. infantis qPCR data with 'tested' column.
+    inflammation_df : DataFrame
+        Long-format gut inflammation data.
+    """
+    if _is_empty(binfantis_df) or _is_empty(inflammation_df):
+        return _empty_figure("Insufficient data")
+
+    binf = binfantis_df.copy()
+    if "tested" in binf.columns:
+        binf = binf[binf["tested"] == True]
+    binf = binf[binf["specimen_type"] == "infant"]
+    binf = binf[binf["b_infantis_positive"].notna()]
+
+    inflam = inflammation_df[
+        (inflammation_df["specimen_type"] == "infant") &
+        (inflammation_df["mpo"].notna())
+    ]
+
+    merged = binf.merge(
+        inflam[["study_id", "timepoint", "mpo"]],
+        on=["study_id", "timepoint"],
+        how="inner",
+    )
+
+    if merged.empty or len(merged) < 20:
+        return _empty_figure("Insufficient paired data")
+
+    merged["log_mpo"] = np.log10(merged["mpo"].clip(lower=1))
+    merged["status"] = merged["b_infantis_positive"].map(
+        {True: "B. infantis +", False: "B. infantis −"}
+    )
+
+    fig = go.Figure()
+
+    for status, color in [("B. infantis +", _BINF_POS_COLOR), ("B. infantis −", _BINF_NEG_COLOR)]:
+        sub = merged[merged["status"] == status]
+        if sub.empty:
+            continue
+
+        for tp in [t for t in TIMEPOINT_ORDER if t in sub["timepoint"].values]:
+            tp_data = sub[sub["timepoint"] == tp]
+            fig.add_trace(go.Box(
+                x=[tp] * len(tp_data),
+                y=tp_data["log_mpo"],
+                name=status,
+                legendgroup=status,
+                showlegend=(tp == sub["timepoint"].unique()[0]),
+                marker_color=color,
+                boxmean=True,
+                line=dict(color=color),
+            ))
+
+    fig.update_layout(
+        title=dict(text="Gut Inflammation (MPO) by B. infantis Status", font=dict(size=15)),
+        boxmode="group",
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        xaxis=dict(title="Timepoint"),
+        yaxis=dict(
+            title="log₁₀(MPO ng/mL)",
+            showgrid=True, gridcolor="#EEEEEE",
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=11)),
+        height=420,
+        margin=dict(l=60, r=40, t=80, b=40),
+        font=FONT,
+    )
+
+    return fig
+
+
+def binfantis_vs_growth(binfantis_df, growth_df):
+    """
+    Compare infant growth (LAZ) trajectories by B. infantis status.
+
+    Line chart: mean LAZ over time for B. infantis+ vs − infants.
+
+    Parameters
+    ----------
+    binfantis_df : DataFrame
+        Long-format B. infantis qPCR data with 'tested' column.
+    growth_df : DataFrame
+        Long-format infant growth data.
+    """
+    if _is_empty(binfantis_df) or _is_empty(growth_df):
+        return _empty_figure("Insufficient data")
+
+    binf = binfantis_df.copy()
+    if "tested" in binf.columns:
+        binf = binf[binf["tested"] == True]
+    binf = binf[binf["specimen_type"] == "infant"]
+    binf = binf[binf["b_infantis_positive"].notna()]
+
+    # Map B. infantis timepoints to growth months
+    tp_to_months = {
+        "1-2mo": [1, 2],
+        "3-4mo": [3, 4],
+        "5-6mo": [5, 6],
+    }
+
+    records = []
+    for tp, months in tp_to_months.items():
+        binf_tp = binf[binf["timepoint"] == tp][["study_id", "b_infantis_positive"]]
+        for m in months:
+            growth_m = growth_df[(growth_df["month"] == m) & growth_df["laz"].notna()]
+            merged = growth_m.merge(binf_tp, on="study_id", how="inner")
+            if not merged.empty:
+                merged["_month"] = m
+                records.append(merged[["study_id", "_month", "laz", "waz", "b_infantis_positive"]])
+
+    if not records:
+        return _empty_figure("No paired B. infantis + growth data")
+
+    all_data = pd.concat(records, ignore_index=True)
+    all_data["status"] = all_data["b_infantis_positive"].map(
+        {True: "B. infantis +", False: "B. infantis −"}
+    )
+
+    fig = go.Figure()
+
+    for status, color, dash in [
+        ("B. infantis +", _BINF_POS_COLOR, "solid"),
+        ("B. infantis −", _BINF_NEG_COLOR, "dash"),
+    ]:
+        sub = all_data[all_data["status"] == status]
+        if sub.empty:
+            continue
+
+        stats = sub.groupby("_month")["laz"].agg(["mean", "sem", "count"]).reset_index()
+        stats = stats[stats["count"] >= 5]
+
+        fig.add_trace(go.Scatter(
+            x=stats["_month"],
+            y=stats["mean"],
+            mode="lines+markers",
+            name=f"{status} (n≈{int(stats['count'].median())})",
+            line=dict(color=color, width=2.5, dash=dash),
+            marker=dict(size=7),
+            error_y=dict(
+                type="data",
+                array=stats["sem"].tolist(),
+                visible=True,
+                thickness=1.5,
+            ),
+        ))
+
+    # Stunting threshold
+    fig.add_hline(y=-2, line_dash="dot", line_color="#999", line_width=1,
+                  annotation_text="Stunting (LAZ < −2)",
+                  annotation_position="bottom right",
+                  annotation_font=dict(size=9, color="#999"))
+
+    fig.update_layout(
+        title=dict(text="Infant Growth (LAZ) by B. infantis Status", font=dict(size=15)),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        xaxis=dict(title="Age (months)", showgrid=True, gridcolor="#EEEEEE", dtick=1),
+        yaxis=dict(title="Length-for-age Z-score (LAZ)", showgrid=True, gridcolor="#EEEEEE"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=11)),
+        height=400,
+        margin=dict(l=60, r=40, t=80, b=40),
+        font=FONT,
+    )
+
+    return fig

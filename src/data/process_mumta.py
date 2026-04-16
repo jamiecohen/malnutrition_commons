@@ -225,7 +225,13 @@ def build_maternal_anemia(df):
 # 4. B. infantis / B. longum qPCR (long format)
 # ---------------------------------------------------------------------------
 def build_binfantis(df):
-    """Long format qPCR results for B. infantis and B. longum."""
+    """Long format qPCR results for B. infantis and B. longum.
+
+    IMPORTANT: Only rows where the qPCR was actually run (result is not NaN)
+    are marked as tested. NaN result = not tested (specimen not available or
+    not included in substudy), NOT negative. The `tested` column distinguishes
+    these cases. Only ~100-200 participants per timepoint have qPCR data.
+    """
     records = []
     for raw_tp, (clean_tp, specimen) in BIOMARKER_TIMEPOINTS.items():
         prefix = f"{raw_tp} BInfBLong"
@@ -243,10 +249,32 @@ def build_binfantis(df):
         sub["arm"] = df["ARM"]
         sub["timepoint"] = clean_tp
         sub["specimen_type"] = specimen
-        sub["b_infantis_positive"] = df[binf_result_col].astype(str).str.strip().str.lower() == "positive"
+
+        # Mark whether this participant was actually tested (result is not NaN)
+        binf_result = df[binf_result_col]
+        blong_result = df[blong_result_col]
+        sub["tested"] = binf_result.notna()
+
+        # Positive flag: True if "Positive", False if "Negative", NaN if not tested
+        # Use object dtype to allow NaN alongside True/False
+        _binf_pos = pd.array(
+            [True if str(v).strip().lower() == "positive"
+             else (False if pd.notna(v) else pd.NA)
+             for v in binf_result],
+            dtype=pd.BooleanDtype(),
+        )
+        sub["b_infantis_positive"] = _binf_pos
         sub["b_infantis_ct"] = coerce_numeric(df.get(binf_ct_col, pd.Series(dtype=float)))
-        sub["b_longum_positive"] = df[blong_result_col].astype(str).str.strip().str.lower() == "positive"
+
+        _blong_pos = pd.array(
+            [True if str(v).strip().lower() == "positive"
+             else (False if pd.notna(v) else pd.NA)
+             for v in blong_result],
+            dtype=pd.BooleanDtype(),
+        )
+        sub["b_longum_positive"] = _blong_pos
         sub["b_longum_ct"] = coerce_numeric(df.get(blong_ct_col, pd.Series(dtype=float)))
+
         records.append(sub)
 
     long = pd.concat(records, ignore_index=True)

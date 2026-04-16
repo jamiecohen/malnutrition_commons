@@ -93,6 +93,11 @@ try:
         pathogen_burden_trajectory,
         gut_inflammation_vs_growth,
         top_pathogens_by_timepoint,
+        binfantis_colonization_corrected,
+        binfantis_by_arm,
+        binfantis_vs_pathogens,
+        binfantis_vs_inflammation,
+        binfantis_vs_growth,
         ARM_LABELS as MUMTA_ARM_LABELS,
     )
     _MUMTA_VIZ_AVAILABLE = True
@@ -1113,15 +1118,122 @@ with tab3:
 
         st.markdown("---")
 
-        # ── Section 5: B. infantis Colonization ──────────────────────────────
-        st.markdown("### B. infantis Colonization")
+        # ── Section 5: B. infantis Deep Dive ────────────────────────────────
+        st.markdown("### B. infantis Colonization & Protective Effects")
+        st.markdown(
+            "*B. infantis* is a key commensal bacterium hypothesized to protect against "
+            "enteric pathogens and gut inflammation, potentially improving nutrient absorption "
+            "and infant growth. This section explores colonization patterns and associations "
+            "with pathogens, gut inflammation, and growth in the MUMTA substudy (~100–106 "
+            "infants with qPCR data per timepoint)."
+        )
         _binfantis_path = _mumta_dir / "mumta_binfantis.csv"
         if _binfantis_path.exists():
             _binfantis_df = pd.read_csv(_binfantis_path)
-            _fig_binf = binfantis_colonization(_binfantis_df)
-            st.plotly_chart(_fig_binf, use_container_width=True)
+
+            _binf_view = st.radio(
+                "B. infantis view",
+                [
+                    "Colonization trajectory",
+                    "By treatment arm",
+                    "vs. Enteric pathogens",
+                    "vs. Gut inflammation",
+                    "vs. Infant growth",
+                ],
+                horizontal=True,
+                key="mumta_binf_view",
+            )
+
+            if _binf_view == "Colonization trajectory":
+                _fig_binf_traj = binfantis_colonization_corrected(_binfantis_df)
+                st.plotly_chart(_fig_binf_traj, use_container_width=True)
+                st.markdown(
+                    '<div class="context-box">'
+                    '<b>Key pattern:</b> Infant B. infantis colonization rises from 77% at 1–2 months '
+                    'to 92% at 5–6 months (among tested). Maternal colonization is much lower '
+                    '(2–26%), suggesting infant acquisition is primarily environmental/dietary '
+                    'rather than vertical transmission. Note: only ~100–106 participants per '
+                    'timepoint were tested in the qPCR substudy.'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+
+            elif _binf_view == "By treatment arm":
+                _fig_binf_arm = binfantis_by_arm(_binfantis_df)
+                st.plotly_chart(_fig_binf_arm, use_container_width=True)
+                st.markdown(
+                    '<div class="context-box">'
+                    '<b>Arm comparison:</b> Maamta (Arm B) shows the highest colonization (92–96%), '
+                    'while Maamta+Choline+Nicotinamide (Arm D) shows the lowest (61–86%). '
+                    'Small sample sizes per arm (~20–36) limit statistical power, but the '
+                    'pattern suggests the choline/nicotinamide combination may alter the gut '
+                    'environment in ways that affect B. infantis colonization.'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+
+            elif _binf_view == "vs. Enteric pathogens":
+                _tac_path = _mumta_dir / "mumta_tac_pathogens.csv"
+                if _tac_path.exists():
+                    _tac_df_binf = pd.read_csv(_tac_path)
+                    _fig_binf_path = binfantis_vs_pathogens(_binfantis_df, _tac_df_binf)
+                    st.plotly_chart(_fig_binf_path, use_container_width=True)
+                    st.markdown(
+                        '<div class="context-box">'
+                        '<b>Mixed signal:</b> B. infantis+ infants show <i>lower</i> detection of '
+                        'EAEC and Shigella/EIEC (consistent with competitive exclusion), but '
+                        '<i>higher</i> detection of Campylobacter and Giardia. This may reflect '
+                        'confounding by shared environmental exposures rather than a causal effect '
+                        '— infants in environments with more diverse microbiome exposure may acquire '
+                        'both B. infantis and enteric pathogens. Sample sizes are small (n≈14 for '
+                        'B. infantis− group), limiting statistical interpretation.'
+                        '</div>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.info("TAC pathogen data not available.")
+
+            elif _binf_view == "vs. Gut inflammation":
+                _inflam_path_binf = _mumta_dir / "mumta_gut_inflammation.csv"
+                if _inflam_path_binf.exists():
+                    _inflam_df_binf = pd.read_csv(_inflam_path_binf)
+                    _fig_binf_inflam = binfantis_vs_inflammation(_binfantis_df, _inflam_df_binf)
+                    st.plotly_chart(_fig_binf_inflam, use_container_width=True)
+                    st.markdown(
+                        '<div class="context-box">'
+                        '<b>Counter-intuitive finding:</b> B. infantis+ infants show <i>higher</i> '
+                        'median MPO than B. infantis− infants. This likely reflects the small and '
+                        'imbalanced comparison group (n≈8–24 for B. infantis−) rather than a true '
+                        'harmful effect. MPO levels are extremely high across all infants in this '
+                        'cohort (median >1000 ng/mL), consistent with widespread environmental '
+                        'enteric dysfunction (EED) in this setting.'
+                        '</div>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.info("Gut inflammation data not available.")
+
+            else:  # vs. Infant growth
+                _growth_path_binf = _mumta_dir / "mumta_infant_growth.csv"
+                if _growth_path_binf.exists():
+                    _growth_df_binf = pd.read_csv(_growth_path_binf)
+                    _fig_binf_growth = binfantis_vs_growth(_binfantis_df, _growth_df_binf)
+                    st.plotly_chart(_fig_binf_growth, use_container_width=True)
+                    st.markdown(
+                        '<div class="context-box">'
+                        '<b>No clear protective signal:</b> B. infantis+ infants actually show '
+                        'slightly <i>lower</i> LAZ than B. infantis− infants at most timepoints, '
+                        'though the difference is within standard error bounds. The B. infantis− '
+                        'group is very small (n≈8–24), and these are observational comparisons '
+                        'subject to confounding. A protective effect of B. infantis may require '
+                        'higher colonization density (lower Ct) rather than simple presence/absence.'
+                        '</div>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.info("Infant growth data not available.")
         else:
-            st.info("B. infantis colonization data not yet processed.")
+            st.info("B. infantis data not yet processed. Run `python src/data/process_mumta.py --force`.")
 
         st.markdown("---")
 
