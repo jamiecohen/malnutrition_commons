@@ -60,10 +60,14 @@ malnutrition_commons/
 │   │   ├── pull_lsff.py        # LSFF/FFI fortification coverage
 │   │   ├── pull_gbd.py         # GBD micronutrient deficiencies (OWID + manual)
 │   │   ├── pull_outcomes.py    # World Bank outcomes and context
+│   │   ├── pull_dhs_subnational.py  # Nigeria state-level DHS data
+│   │   ├── process_mumta.py    # MUMTA cohort raw data → 6 analysis CSVs
 │   │   └── harmonize.py        # Merges all sources into snapshot + panel
 │   └── viz/
 │       ├── figures.py          # Core chart functions (choropleth, scatter, bar, trend)
-│       └── insights.py         # Hypothesis-driven cross-indicator analysis (H1–H11)
+│       ├── insights.py         # Hypothesis-driven cross-indicator analysis (H1–H11)
+│       ├── mumta.py            # MUMTA cohort visualizations (6 chart functions)
+│       └── product_impact.py   # Product-level DALY/cost modelling
 ├── dashboard/
 │   └── app.py                  # Streamlit interactive dashboard
 ├── outputs/
@@ -88,22 +92,55 @@ malnutrition_commons/
 
 ## Quick Start
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
+### 1. Clone and install
 
-# Pull all data (skips existing files by default)
+```bash
+git clone https://github.com/jamiecohen/malnutrition_commons.git
+cd malnutrition_commons
+python3 -m venv venv
+source venv/bin/activate      # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 2. Download supporting data
+
+The processed datasets ship with the repo, so the dashboard works immediately. To refresh data from source or pull additional datasets:
+
+```bash
+# Pull Nigeria state-level data for the subnational tab (DHS API)
+python src/data/pull_dhs_subnational.py
+
+# (Optional) Re-pull all source data from scratch (skips existing files)
 python src/data/pull_data.py
 
-# Harmonize into analysis-ready datasets
+# (Optional) Re-harmonize into analysis-ready datasets
 python src/data/harmonize.py
+```
 
-# Run hypothesis analysis (saves figures to outputs/slides/insights/)
-python src/viz/insights.py
+### 3. Run the dashboard
 
-# Launch interactive dashboard
+```bash
 streamlit run dashboard/app.py
 ```
+
+This opens the dashboard in your browser at `http://localhost:8501`.
+
+### Dashboard tabs
+
+| Tab | What's in it |
+|-----|-------------|
+| **Architecture & Sources** | Data pipeline diagram and source documentation |
+| **Priority Geographies** | Pakistan, India, Nigeria country profiles with ground-truth survey comparisons and trends |
+| **Deep Dive: Pakistan** | MUMTA cohort data — birth outcomes, maternal anemia, infant growth, B. infantis colonization |
+| **Product Impact** | DALY/cost projections for 5 nutrition products with adjustable parameters |
+| **Nigeria Subnational** | State-level choropleth maps and zone analysis (NDHS 2018) |
+| **Global Context** | Ecological views across 226 countries — choropleth, co-occurrence, causal pathways, country profiles |
+
+### Troubleshooting
+
+- **Nigeria subnational warning**: Run `python src/data/pull_dhs_subnational.py` to download the DHS data
+- **`streamlit` not found**: Make sure your virtual environment is activated (`source venv/bin/activate`)
+- **`geopandas` install failure on Apple Silicon**: Try `pip install pygeos` first, then re-run `pip install -r requirements.txt`
 
 > **Note**: Iron deficiency, iodine deficiency, and SGA prevalence require a manual download from the IHME GBD Results Tool. See `docs/gbd_download_guide.md` for step-by-step instructions. Vitamin A and zinc deficiency are pulled programmatically from OWID.
 
