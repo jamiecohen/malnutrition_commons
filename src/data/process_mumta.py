@@ -34,9 +34,14 @@ METADATA_FILE = RAW_DIR / "MUMTA-PW_Metadata.xlsx"
 ARM_LABELS = {
     "A": "Control",
     "B": "Maamta",
-    "C": "Maamta+Azithromycin",
-    "D": "Maamta+Choline+Nicotinamide",
+    "C": "Maamta + Azithromycin",
+    "D": "Maamta + Nicotinamide/Choline",
 }
+
+# Ct threshold for qPCR positive classification.
+# Standard TAC threshold is 35; we use the same for B. infantis/B. longum.
+# A non-null Ct value below this threshold = positive detection.
+QPCR_CT_POSITIVE_THRESHOLD = 35
 
 OUTPUT_FILES = [
     "mumta_cohort_summary.csv",
@@ -227,10 +232,14 @@ def build_maternal_anemia(df):
 def build_binfantis(df):
     """Long format qPCR results for B. infantis and B. longum.
 
-    IMPORTANT: Only rows where the qPCR was actually run (result is not NaN)
-    are marked as tested. NaN result = not tested (specimen not available or
-    not included in substudy), NOT negative. The `tested` column distinguishes
-    these cases. Only ~100-200 participants per timepoint have qPCR data.
+    Classification is based directly on Ct values (not the pre-classified Result
+    field) for consistency across cohorts and to catch any coding errors:
+      - Ct < QPCR_CT_POSITIVE_THRESHOLD (35) → positive
+      - Ct is NaN but Result is not NaN → tested but negative (no amplification)
+      - Both Ct and Result are NaN → not tested (excluded from denominator)
+
+    IMPORTANT: Only ~100-200 participants per timepoint have qPCR data.
+    The `tested` column distinguishes tested-negative from not-tested.
     """
     records = []
     for raw_tp, (clean_tp, specimen) in BIOMARKER_TIMEPOINTS.items():
@@ -250,30 +259,36 @@ def build_binfantis(df):
         sub["timepoint"] = clean_tp
         sub["specimen_type"] = specimen
 
-        # Mark whether this participant was actually tested (result is not NaN)
+        # Parse Ct values
+        binf_ct = coerce_numeric(df.get(binf_ct_col, pd.Series(dtype=float)))
+        blong_ct = coerce_numeric(df.get(blong_ct_col, pd.Series(dtype=float)))
         binf_result = df[binf_result_col]
-        blong_result = df[blong_result_col]
-        sub["tested"] = binf_result.notna()
+        blong_result = df.get(blong_result_col, pd.Series(dtype=object))
 
-        # Positive flag: True if "Positive", False if "Negative", NaN if not tested
-        # Use object dtype to allow NaN alongside True/False
+        # Tested = Result column is not NaN (meaning the assay was run)
+        sub["tested"] = binf_result.notna() | binf_ct.notna()
+
+        # Classify from Ct values directly:
+        #   - Ct < threshold → positive
+        #   - Ct is NaN but was tested → negative (no amplification detected)
+        #   - Not tested → pd.NA
         _binf_pos = pd.array(
-            [True if str(v).strip().lower() == "positive"
-             else (False if pd.notna(v) else pd.NA)
-             for v in binf_result],
+            [True if (pd.notna(ct) and ct < QPCR_CT_POSITIVE_THRESHOLD)
+             else (False if (pd.notna(result) or pd.notna(ct)) else pd.NA)
+             for ct, result in zip(binf_ct, binf_result)],
             dtype=pd.BooleanDtype(),
         )
         sub["b_infantis_positive"] = _binf_pos
-        sub["b_infantis_ct"] = coerce_numeric(df.get(binf_ct_col, pd.Series(dtype=float)))
+        sub["b_infantis_ct"] = binf_ct
 
         _blong_pos = pd.array(
-            [True if str(v).strip().lower() == "positive"
-             else (False if pd.notna(v) else pd.NA)
-             for v in blong_result],
+            [True if (pd.notna(ct) and ct < QPCR_CT_POSITIVE_THRESHOLD)
+             else (False if (pd.notna(result) or pd.notna(ct)) else pd.NA)
+             for ct, result in zip(blong_ct, blong_result)],
             dtype=pd.BooleanDtype(),
         )
         sub["b_longum_positive"] = _blong_pos
-        sub["b_longum_ct"] = coerce_numeric(df.get(blong_ct_col, pd.Series(dtype=float)))
+        sub["b_longum_ct"] = blong_ct
 
         records.append(sub)
 

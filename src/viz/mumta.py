@@ -30,7 +30,7 @@ ARM_LABELS = {
     "A": "Control",
     "B": "Maamta",
     "C": "Maamta + Azithro",
-    "D": "Maamta + Choline + Nic",
+    "D": "Maamta + Nic/Choline",
 }
 
 ARM_ORDER = ["A", "B", "C", "D"]
@@ -1829,5 +1829,229 @@ def binfantis_vs_growth(binfantis_df, growth_df):
         margin=dict(l=60, r=40, t=80, b=40),
         font=FONT,
     )
+
+    return fig
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# B. infantis colonization persistence / transitions
+# ═════════════════════════════════════════════════════════════════════════════
+
+def binfantis_persistence(binfantis_df):
+    """Track B. infantis colonization transitions over time.
+
+    Shows what fraction of infants gain, lose, or maintain colonization
+    between consecutive timepoints. Also shows an "ever colonized" summary.
+
+    Parameters
+    ----------
+    binfantis_df : DataFrame
+        Long-format B. infantis qPCR data with 'tested' column.
+    """
+    if _is_empty(binfantis_df):
+        return _empty_figure("No B. infantis data available")
+
+    df = binfantis_df.copy()
+    if "tested" in df.columns:
+        df = df[df["tested"] == True]  # noqa: E712
+    df = df[df["specimen_type"] == "infant"]
+    df = df[df["b_infantis_positive"].notna()]
+
+    infant_tps = [tp for tp in TIMEPOINT_ORDER if tp in df["timepoint"].unique()
+                  and tp not in ("19wk", "32wk")]
+
+    if len(infant_tps) < 2:
+        return _empty_figure("Need at least 2 infant timepoints")
+
+    # Pivot: study_id × timepoint
+    wide = df.pivot_table(
+        index="study_id", columns="timepoint",
+        values="b_infantis_positive", aggfunc="first",
+    )
+    # Only keep infants tested at 2+ timepoints
+    wide = wide[infant_tps].dropna(thresh=2)
+
+    # Compute transitions between consecutive timepoints
+    transitions = []
+    for i in range(len(infant_tps) - 1):
+        tp1, tp2 = infant_tps[i], infant_tps[i + 1]
+        pair = wide[[tp1, tp2]].dropna()
+        if len(pair) == 0:
+            continue
+        stayed_pos = ((pair[tp1] == True) & (pair[tp2] == True)).sum()
+        stayed_neg = ((pair[tp1] == False) & (pair[tp2] == False)).sum()
+        gained = ((pair[tp1] == False) & (pair[tp2] == True)).sum()
+        lost = ((pair[tp1] == True) & (pair[tp2] == False)).sum()
+        n = len(pair)
+        transitions.append({
+            "period": f"{tp1} → {tp2}",
+            "Stayed colonized": stayed_pos / n * 100,
+            "Gained colonization": gained / n * 100,
+            "Lost colonization": lost / n * 100,
+            "Stayed negative": stayed_neg / n * 100,
+            "n": n,
+            "n_lost": lost,
+            "n_gained": gained,
+        })
+
+    if not transitions:
+        return _empty_figure("No paired-timepoint data")
+
+    tdf = pd.DataFrame(transitions)
+
+    fig = go.Figure()
+    colors = {
+        "Stayed colonized": "#2A9D8F",
+        "Gained colonization": "#264653",
+        "Lost colonization": "#E76F51",
+        "Stayed negative": "#DDD",
+    }
+    for status in ["Stayed colonized", "Gained colonization", "Lost colonization", "Stayed negative"]:
+        fig.add_trace(go.Bar(
+            x=tdf["period"], y=tdf[status],
+            name=status, marker_color=colors[status],
+            text=[f"{v:.0f}%" for v in tdf[status]],
+            textposition="inside", textfont=dict(size=10),
+            hovertemplate=f"<b>{status}</b><br>" + "%{x}: %{y:.1f}%<extra></extra>",
+        ))
+
+    fig.update_layout(
+        title=dict(text="B. infantis Colonization Transitions Between Timepoints", font=dict(size=15)),
+        barmode="stack",
+        plot_bgcolor="white", paper_bgcolor="white",
+        xaxis=dict(title="Transition period"),
+        yaxis=dict(title="% of tested infants", range=[0, 105]),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=11)),
+        height=420, font=FONT,
+        margin=dict(l=60, r=40, t=80, b=40),
+    )
+
+    # Add annotation for n lost per period
+    for i, row in tdf.iterrows():
+        fig.add_annotation(
+            x=row["period"], y=102,
+            text=f"n={row['n']} ({row['n_lost']} lost, {row['n_gained']} gained)",
+            showarrow=False, font=dict(size=9, color="#666"),
+        )
+
+    return fig
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Pathogen burden categorical analysis
+# ═════════════════════════════════════════════════════════════════════════════
+
+def binfantis_vs_pathogen_burden(binfantis_df, tac_df):
+    """Compare B. infantis status against categorical total pathogen burden.
+
+    Groups infants by total pathogens detected (none, low 1-2, medium 3-5,
+    high 6+) and shows B. infantis colonization rate within each group,
+    plus the reverse: pathogen burden distribution within B.inf+/B.inf−.
+
+    Parameters
+    ----------
+    binfantis_df : DataFrame
+        Long-format B. infantis qPCR data with 'tested' column.
+    tac_df : DataFrame
+        Long-format TAC pathogen data.
+    """
+    if _is_empty(binfantis_df) or _is_empty(tac_df):
+        return _empty_figure("Insufficient data")
+
+    # Get infant B. infantis status (tested only)
+    binf = binfantis_df.copy()
+    if "tested" in binf.columns:
+        binf = binf[binf["tested"] == True]  # noqa: E712
+    binf = binf[binf["specimen_type"] == "infant"]
+    binf = binf[binf["b_infantis_positive"].notna()]
+
+    # Compute total pathogen burden per infant per timepoint
+    tac = tac_df[tac_df["specimen_type"] == "infant"].copy()
+    burden = tac.groupby(["study_id", "timepoint"])["detected"].sum().reset_index()
+    burden.rename(columns={"detected": "total_pathogens"}, inplace=True)
+
+    # Merge
+    merged = binf[["study_id", "timepoint", "b_infantis_positive"]].merge(
+        burden, on=["study_id", "timepoint"], how="inner",
+    )
+
+    if len(merged) < 20:
+        return _empty_figure(f"Insufficient overlap (n={len(merged)})")
+
+    # Categorical burden
+    def _burden_cat(n):
+        if n == 0:
+            return "None (0)"
+        elif n <= 2:
+            return "Low (1–2)"
+        elif n <= 5:
+            return "Medium (3–5)"
+        else:
+            return "High (6+)"
+
+    merged["burden_cat"] = merged["total_pathogens"].apply(_burden_cat)
+    cat_order = ["None (0)", "Low (1–2)", "Medium (3–5)", "High (6+)"]
+
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=[
+            "B. infantis rate by pathogen burden",
+            "Pathogen burden in B.inf+ vs B.inf−",
+        ],
+    )
+
+    # Left panel: B.inf rate within each burden category
+    for cat in cat_order:
+        sub = merged[merged["burden_cat"] == cat]
+        if len(sub) < 3:
+            continue
+        n_pos = sub["b_infantis_positive"].sum()
+        n_tot = len(sub)
+        rate = n_pos / n_tot * 100
+
+        fig.add_trace(go.Bar(
+            x=[cat], y=[rate],
+            marker_color="#2A9D8F",
+            text=[f"{rate:.0f}%<br>(n={n_tot})"],
+            textposition="outside",
+            showlegend=False,
+            hovertemplate=f"<b>{cat}</b><br>B.inf+ rate: {rate:.1f}%<br>n={n_tot}<extra></extra>",
+        ), row=1, col=1)
+
+    # Right panel: burden distribution in B.inf+ vs B.inf−
+    for status, color, label in [
+        (True, _BINF_POS_COLOR, "B. infantis +"),
+        (False, _BINF_NEG_COLOR, "B. infantis −"),
+    ]:
+        sub = merged[merged["b_infantis_positive"] == status]
+        if len(sub) < 3:
+            continue
+        counts = sub["burden_cat"].value_counts()
+        pcts = []
+        for cat in cat_order:
+            pcts.append(counts.get(cat, 0) / len(sub) * 100)
+
+        fig.add_trace(go.Bar(
+            x=cat_order, y=pcts,
+            name=f"{label} (n={len(sub)})",
+            marker_color=color,
+            text=[f"{p:.0f}%" for p in pcts],
+            textposition="outside",
+            textfont=dict(size=9),
+        ), row=1, col=2)
+
+    fig.update_layout(
+        title=dict(
+            text="B. infantis vs Categorical Pathogen Burden (Infant)",
+            font=dict(size=15),
+        ),
+        barmode="group",
+        plot_bgcolor="white", paper_bgcolor="white",
+        legend=dict(orientation="h", yanchor="bottom", y=1.05, font=dict(size=11)),
+        height=430, font=FONT,
+        margin=dict(l=60, r=40, t=100, b=40),
+    )
+    fig.update_yaxes(title_text="B. infantis rate (%)", row=1, col=1)
+    fig.update_yaxes(title_text="% of group", row=1, col=2)
 
     return fig

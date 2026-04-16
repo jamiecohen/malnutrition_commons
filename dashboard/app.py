@@ -98,6 +98,8 @@ try:
         binfantis_vs_pathogens,
         binfantis_vs_inflammation,
         binfantis_vs_growth,
+        binfantis_persistence,
+        binfantis_vs_pathogen_burden,
         ARM_LABELS as MUMTA_ARM_LABELS,
     )
     _MUMTA_VIZ_AVAILABLE = True
@@ -1551,6 +1553,8 @@ with tab3:
                     [
                         "Colonization trajectory",
                         "By treatment arm",
+                        "Persistence / transitions",
+                        "vs. Pathogen burden",
                         "vs. Enteric pathogens",
                         "vs. Gut inflammation",
                         "vs. Infant growth",
@@ -1586,6 +1590,41 @@ with tab3:
                         '</div>',
                         unsafe_allow_html=True,
                     )
+
+                elif _binf_view == "Persistence / transitions":
+                    _fig_persist = binfantis_persistence(_binfantis_df)
+                    st.plotly_chart(_fig_persist, use_container_width=True)
+                    st.markdown(
+                        '<div class="context-box">'
+                        '<b>Colonization dynamics:</b> This shows what happens between consecutive '
+                        'timepoints — do infants stay colonized, lose colonization, gain it, or '
+                        'stay negative? Losing colonization after initial establishment could '
+                        'indicate displacement by pathogens, dietary changes (weaning), or '
+                        'antibiotic exposure. Tracking these transitions helps distinguish '
+                        'persistent colonization from transient detection.'
+                        '</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                elif _binf_view == "vs. Pathogen burden":
+                    _tac_path_burden = _mumta_dir / "mumta_tac_pathogens.csv"
+                    if _tac_path_burden.exists():
+                        _tac_df_burden = pd.read_csv(_tac_path_burden)
+                        _fig_burden = binfantis_vs_pathogen_burden(_binfantis_df, _tac_df_burden)
+                        st.plotly_chart(_fig_burden, use_container_width=True)
+                        st.markdown(
+                            '<div class="context-box">'
+                            '<b>Categorical burden analysis:</b> Instead of looking at individual '
+                            'pathogen detection rates, this groups infants by <i>total</i> pathogen '
+                            'burden (none, low 1–2, medium 3–5, high 6+). <b>Left panel:</b> Is '
+                            'B. infantis colonization higher or lower in infants with heavy pathogen '
+                            'burden? <b>Right panel:</b> Do B. infantis+ infants carry fewer '
+                            'total pathogens than B. infantis− infants?'
+                            '</div>',
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.info("TAC pathogen data not available.")
 
                 elif _binf_view == "vs. Enteric pathogens":
                     _tac_path = _mumta_dir / "mumta_tac_pathogens.csv"

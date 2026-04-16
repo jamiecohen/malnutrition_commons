@@ -156,10 +156,38 @@ def build_neonatal(force=False):
     site_map = {"Pakistan": "PAK", "Bangladesh": "BGD", "Tanzania": "TZA"}
     df["site"] = df["SITE_CODE"].map(site_map)
 
-    # Clean B. infantis / B. longum
-    df["binfantis_positive"] = df["B.Inf."].map({"POS": True, "NEG": False})
-    df["blongum_positive"] = df["B.Long."].map({"POS": True, "NEG": False})
+    # Clean B. infantis / B. longum — classify from Ct values directly
+    # (not the pre-classified POS/NEG field) for consistency and to catch errors.
+    # Ct < 35 = positive; Ct >= 35 or NaN-with-result = negative; no result = not tested.
+    CT_THRESHOLD = 35
     df.rename(columns={"Ct Value": "binfantis_ct", "Ct Value.1": "blongum_ct"}, inplace=True)
+    df["binfantis_ct"] = pd.to_numeric(df["binfantis_ct"], errors="coerce")
+    df["blongum_ct"] = pd.to_numeric(df["blongum_ct"], errors="coerce")
+
+    # B. infantis: positive if Ct < threshold
+    _bi_tested = df["B.Inf."].notna() | df["binfantis_ct"].notna()
+    df["binfantis_positive"] = np.where(
+        ~_bi_tested, np.nan,
+        np.where(df["binfantis_ct"].notna() & (df["binfantis_ct"] < CT_THRESHOLD), True, False),
+    )
+    df["binfantis_positive"] = df["binfantis_positive"].astype(float)  # NaN-safe
+
+    # B. longum: positive if Ct < threshold
+    _bl_tested = df["B.Long."].notna() | df["blongum_ct"].notna()
+    df["blongum_positive"] = np.where(
+        ~_bl_tested, np.nan,
+        np.where(df["blongum_ct"].notna() & (df["blongum_ct"] < CT_THRESHOLD), True, False),
+    )
+    df["blongum_positive"] = df["blongum_positive"].astype(float)
+
+    # Log reclassification vs original
+    _orig_bi = df["B.Inf."].map({"POS": True, "NEG": False})
+    _new_bi = df["binfantis_positive"].map({1.0: True, 0.0: False})
+    _diff = (_orig_bi != _new_bi) & _orig_bi.notna() & _new_bi.notna()
+    if _diff.sum() > 0:
+        print(f"  ⚠ B. infantis: {_diff.sum()} reclassified vs original POS/NEG field")
+    else:
+        print(f"  ✓ B. infantis: Ct-based classification matches original POS/NEG")
 
     # Clean birth outcomes
     df["birth_weight_g"] = pd.to_numeric(df["BIRTH_WEIGHT"], errors="coerce")
